@@ -12,7 +12,7 @@ Chiral is a middleware library that abstracts physical storage. It accepts raw J
 
 ## Prerequisites
 
-*   Python 3.14+
+*   Python 3.13+
 *   uv (Project Manager)
 *   Docker & Docker Compose (for local development databases)
 *   Just (Command Runner) - **Required**
