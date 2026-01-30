@@ -5,6 +5,7 @@
 
 """Configuration settings for the application."""
 
+from functools import lru_cache
 from typing import Self
 
 from pydantic import MongoDsn, PostgresDsn, computed_field, model_validator
@@ -77,4 +78,7 @@ class Settings(BaseSettings):
         )
 
 
-settings = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    """Return a cached instance of the Settings class."""
+    return Settings()

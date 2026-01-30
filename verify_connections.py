@@ -13,7 +13,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from src.chiral.config import settings
+from src.chiral.config import get_settings
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 async def check_sql() -> None:
     """Check PostgreSQL connection."""
+    settings = get_settings()
     logger.info("Connecting to PostgreSQL at port %s...", settings.POSTGRES_PORT)
     try:
         engine = create_async_engine(settings.database_url)
@@ -40,6 +41,7 @@ async def check_sql() -> None:
 
 async def check_mongo() -> None:
     """Check MongoDB connection."""
+    settings = get_settings()
     logger.info("Connecting to MongoDB at port %s...", settings.MONGO_PORT)
     try:
         client = AsyncIOMotorClient(settings.mongo_url)
