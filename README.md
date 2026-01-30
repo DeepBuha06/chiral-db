@@ -15,48 +15,74 @@ Chiral is a middleware library that abstracts physical storage. It accepts raw J
 *   Python 3.14+
 *   uv (Project Manager)
 *   Docker & Docker Compose (for local development databases)
-*   Just (Command Runner) - Optional but recommended
+*   Just (Command Runner) - **Required**
 
-## Quick Start
+## Environment Setup
 
-1.  **Install dependencies:**
+1.  **Clone the repository:**
     ```sh
-    uv sync
+    git clone https://github.com/devansh-lodha/chiral-db.git
+    cd chiral-db
     ```
 
-2.  **Setup pre-commit hooks (CRITICAL):**
+2.  **Configure Environment Variables:**
+    Copy the example configuration file:
     ```sh
-    uv run pre-commit install
+    cp .env.example .env
     ```
+    The defaults in `.env` (Postgres on port 5432, Mongo on 27017) are designed to work out-of-the-box with the provided Docker Compose setup.
 
-3.  **Start local databases:**
+3.  **Install Just:**
+    If you don't have `just` installed, install it via your package manager (e.g., `brew install just`).
+
+4.  **Initialize Project:**
+    Run the setup recipe to install dependencies and pre-commit hooks:
     ```sh
-    docker compose up -d
+    just setup
     ```
 
 ## Development Workflow
 
-We use a strict "Gold Standard" quality pipeline.
+We enforce strict quality standards using automated tooling. All commands are abstracted via `just`.
 
-### Commands
+### Running Services
 
-If you have `just` installed:
+Start the local PostgreSQL and MongoDB containers:
+```sh
+just up
+```
 
-*   `just setup`: Install all dependencies and hooks.
-*   `just verify`: Run the full QA suite (Formatter -> Linter -> Type Checker -> Tests).
-*   `just test`: Run tests with coverage.
+Stop them:
+```sh
+just down
+```
 
-Manual equivalents:
+### Verification & Testing
 
-*   **Format:** `uv run ruff format .`
-*   **Lint:** `uv run ruff check . --fix`
-*   **Type Check:** `uv run ty check`
-*   **Test:** `uv run pytest`
+Before submitting code, ensure all checks pass.
+
+*   **Run All Checks:**
+    ```sh
+    just verify
+    ```
+    (Runs Format -> Lint -> Type Check -> Tests)
+
+*   **Run Tests Only:**
+    ```sh
+    just test
+    ```
+
+### Individual Tools
+
+*   **Format:** `just format` (uses `ruff format`)
+*   **Lint:** `just lint` (uses `ruff check`)
+*   **Type Check:** `just type` (uses `ty check`)
 
 ### Commit Policy
 
-1.  **Pre-commit:** Hooks will run automatically on `git commit`. If they fail, fix the issues and re-add the files.
-2.  **Pull Requests:** Direct pushes to `main` are discouraged. Use PRs. CI will enforce all checks.
+1.  **Pre-commit Hooks:** Configured to run automatically on `git commit`. Ensure your environment is set up (`just setup`).
+2.  **Pull Requests:** Direct pushes to `main` are discouraged. CI will run the full `just verify` suite on every PR.
+3.  **Conventional Commits:** Please follow the [Conventional Commits](https://www.conventionalcommits.org/) specification for your commit messages (e.g., `feat: add ingestion logic`, `fix: resolve db connection timeout`).
 
 ## Architecture Layers
 
