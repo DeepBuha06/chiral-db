@@ -6,6 +6,7 @@
 """Configuration settings for the application."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Self
 
 from pydantic import MongoDsn, PostgresDsn, computed_field, model_validator
@@ -29,7 +30,9 @@ class Settings(BaseSettings):
     MONGO_HOST: str = "localhost"
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_ignore_empty=True, extra="ignore"
+        env_file=Path(__file__).resolve().parent.parent.parent / ".env",
+        env_ignore_empty=True,
+        extra="ignore",
     )
 
     @model_validator(mode="after")
