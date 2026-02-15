@@ -16,7 +16,10 @@
 
 ### Prerequisites
 *   **Docker** (Must be running)
-*   **Just** (`brew install just` or `apt install just`)
+*   **Just** (Command Runner):
+    *   **macOS:** `brew install just`
+    *   **Linux:** `sudo apt install just` (Ubuntu/Debian) or `sudo dnf install just` (Fedora)
+    *   **Windows:** `choco install just` or `scoop install just`
 *   **uv** (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 
 ### Setup Configuration
