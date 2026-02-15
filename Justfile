@@ -50,7 +50,7 @@ demo:
     @echo "Starting Databases..."
     docker compose up -d
     @echo "Starting Chiral API & Simulation..."
-    @pkill -f uvicorn || true
+    @bash -c "pkill -f '[u]vicorn' 2>/dev/null || true"
     @rm -f chiral.log simulation.log
 
     @# Start Chiral API (Port 8000)
@@ -61,8 +61,9 @@ demo:
     @nohup uv run uvicorn simulation_code:app --port 8001 > simulation.log 2>&1 &
     @echo "Simulation started on :8001"
 
-    @echo "Waiting 5s for services to initialize..."
-    @sleep 5
+    @echo "Waiting 10s for services to initialize..."
+    @echo "Waiting for Simulation to be ready..."
+    @bash -c "until curl -s http://127.0.0.1:8001/health > /dev/null; do sleep 1; done"
 
     @echo "Running Data Feeder..."
     @uv run python feed_data.py

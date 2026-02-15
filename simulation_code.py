@@ -152,3 +152,9 @@ async def stream_records(count: int) -> EventSourceResponse:
             yield {"event": "record", "data": json.dumps(generate_record())}
 
     return EventSourceResponse(event_generator())
+
+
+@app.get("/health")
+async def health_check() -> dict[str, str]:
+    """Health check endpoint."""
+    return {"status": "ok"}
