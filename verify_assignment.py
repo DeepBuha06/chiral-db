@@ -3,12 +3,12 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Verification script for Chiral DB Assignment 1."""
+"""Verification script for Chiral DB Assignment."""
 
 import asyncio
+import json
 import logging
 
-from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -19,22 +19,21 @@ from src.chiral.config import get_settings
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-logger.info("--- CHIRAL DB: ASSIGNMENT 1 VERIFICATION REPORT ---")
+logger.info("--- CHIRAL DB: ASSIGNMENT VERIFICATION REPORT ---")
 
 
 async def verify() -> None:
-    """Verify data distribution between SQL and Mongo."""
+    """Verify data distribution in PostgreSQL (structured columns + JSONB overflow)."""
     settings = get_settings()
 
-    # 1. Connect to SQL
     engine = create_async_engine(settings.database_url)
+
+    # 1. Check SQL structured data
     async with engine.connect() as conn:
-        # Check Row Count
         try:
             res = await conn.execute(text("SELECT count(*) FROM chiral_data"))
             sql_count = res.scalar()
         except DBAPIError:
-            # If table doesn't exist or query fails, default to 0
             sql_count = 0
             logger.info("[SQL] Table 'chiral_data' does not exist yet.")
 
@@ -48,29 +47,38 @@ async def verify() -> None:
             logger.info("Record Count: %d", sql_count)
             logger.info("Learned Schema (Dynamic Columns):")
             for col in columns:
-                if col[0] not in ["id", "session_id", "username", "sys_ingested_at", "t_stamp"]:
+                if col[0] not in ["id", "session_id", "username", "sys_ingested_at", "t_stamp", "overflow_data"]:
                     logger.info(" - %s: %s", col[0], col[1])
 
-    await engine.dispose()
+    # 2. Check JSONB overflow data (replaces MongoDB)
+    async with engine.connect() as conn:
+        try:
+            res = await conn.execute(
+                text("SELECT COUNT(*) FROM chiral_data WHERE overflow_data IS NOT NULL AND overflow_data != '{}'::jsonb")
+            )
+            overflow_count = res.scalar()
+            logger.info("\n[JSONB OVERFLOW] Semi-Structured/Overflow Storage")
+            logger.info("Records with overflow data: %d", overflow_count)
 
-    # 2. Connect to Mongo
-    client = AsyncIOMotorClient(settings.mongo_url)
-    db = client.chiral
-
-    # Check Permanent Collection (Overflow/Drift)
-    mongo_count = await db.permanent.count_documents({})
-    logger.info("\n[MONGODB] Semi-Structured/Overflow Storage")
-    logger.info("Document Count: %d", mongo_count)
-
-    if mongo_count > 0:
-        sample = await db.permanent.find_one()
-        if sample and isinstance(sample, dict):
-            logger.info("Sample Overflow Document Keys:")
-            keys = [k for k in sample if k not in ["_id", "session_id", "username"]]
-            logger.info("  %s", keys)
+            if overflow_count > 0:
+                sample_res = await conn.execute(
+                    text(
+                        "SELECT overflow_data FROM chiral_data "
+                        "WHERE overflow_data IS NOT NULL AND overflow_data != '{}'::jsonb LIMIT 1"
+                    )
+                )
+                sample_row = sample_res.fetchone()
+                if sample_row:
+                    sample = sample_row[0]
+                    if isinstance(sample, str):
+                        sample = json.loads(sample)
+                    logger.info("Sample Overflow Document Keys:")
+                    keys = [k for k in sample if k not in ["session_id", "username"]]
+                    logger.info("  %s", keys)
+        except DBAPIError:
+            logger.info("[JSONB OVERFLOW] No overflow data found.")
 
     # 3. Check Metadata
-    # Let's check SQL for session metadata
     async with engine.connect() as conn:
         try:
             res = await conn.execute(text("SELECT session_id, status, record_count FROM session_metadata"))
@@ -81,13 +89,23 @@ async def verify() -> None:
                 logger.info("Status: %s", meta[1])
                 logger.info("Total Ingested: %d", meta[2])
         except DBAPIError:
-            # Metadata table might not exist in early stages
             logger.info("[METADATA] Session metadata table unavailable.")
+
+    # 4. Check staging
+    async with engine.connect() as conn:
+        try:
+            res = await conn.execute(text("SELECT COUNT(*) FROM staging_data"))
+            staging_count = res.scalar()
+            logger.info("\n[STAGING] Pending Records: %d", staging_count)
+        except DBAPIError:
+            logger.info("[STAGING] Staging table unavailable.")
+
+    await engine.dispose()
 
     logger.info("\n------------------------------------------------")
     logger.info("CONCLUSION:")
-    if sql_count > 0 and mongo_count >= 0:
-        logger.info("SUCCESS: Hybrid storage active. Data routed to PostgreSQL.")
+    if sql_count > 0:
+        logger.info("SUCCESS: Hybrid storage active. All data in PostgreSQL (structured + JSONB).")
     else:
         logger.info("FAILURE: No data found in SQL.")
 

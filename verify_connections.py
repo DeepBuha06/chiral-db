@@ -9,7 +9,6 @@ import asyncio
 import logging
 import sys
 
-from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -39,23 +38,9 @@ async def check_sql() -> None:
         sys.exit(1)
 
 
-async def check_mongo() -> None:
-    """Check MongoDB connection."""
-    settings = get_settings()
-    logger.info("Connecting to MongoDB at port %s...", settings.MONGO_PORT)
-    try:
-        client = AsyncIOMotorClient(settings.mongo_url)
-        info = await client.server_info()
-        logger.info("SUCCESS: MongoDB %s connected.", info.get("version"))
-    except Exception:
-        logger.exception("FAILURE: MongoDB connection failed.")
-        sys.exit(1)
-
-
 async def main() -> None:
     """Run connection checks."""
     await check_sql()
-    await check_mongo()
 
 
 if __name__ == "__main__":
