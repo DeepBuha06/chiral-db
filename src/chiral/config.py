@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     ROUTING_STABILITY_THRESHOLD: float = 1.0
     ROUTING_TYPE_DRIFT_THRESHOLD: float = 0.0
     ROUTING_TYPE_CONFIDENCE_THRESHOLD: float = 0.8
-    ROUTING_NESTING_DEPTH_THRESHOLD: int = 2
+    ROUTING_NESTING_DEPTH_THRESHOLD: int = 1
     ROUTING_FIELD_STABILITY_RATIO_THRESHOLD: float = 0.75
 
     # Migration performance settings

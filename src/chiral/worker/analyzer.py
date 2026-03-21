@@ -154,6 +154,6 @@ def _build_normalization_policy() -> NormalizationPolicy:
     return NormalizationPolicy(
         type_confidence_threshold=float(os.getenv("ROUTING_TYPE_CONFIDENCE_THRESHOLD", "0.8")),
         uniqueness_confidence_threshold=float(os.getenv("ROUTING_STABILITY_THRESHOLD", "1.0")),
-        nesting_depth_threshold=int(os.getenv("ROUTING_NESTING_DEPTH_THRESHOLD", "2")),
+        nesting_depth_threshold=int(os.getenv("ROUTING_NESTING_DEPTH_THRESHOLD", "1")),
         field_stability_ratio_threshold=float(os.getenv("ROUTING_FIELD_STABILITY_RATIO_THRESHOLD", "0.75")),
     )
