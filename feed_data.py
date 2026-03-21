@@ -14,7 +14,7 @@ import httpx
 # TA's Simulation URL (Port 8001)
 SIMULATION_URL = "http://127.0.0.1:8001/record/1000"
 CHIRAL_API_URL = "http://127.0.0.1:8000/ingest"
-SESSION_ID = "session_assignment_1"
+SESSION_ID = "session_assignment_2"
 FLUSH_API_URL = f"http://127.0.0.1:8000/flush/{SESSION_ID}"
 SUCCESS_STATUS = 200
 LOG_INTERVAL = 100

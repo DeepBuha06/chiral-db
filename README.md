@@ -1,4 +1,4 @@
-# Assignment 1: Adaptive Ingestion & Hybrid Backend Placement
+# Assignment 2: Autonomous Normalization & CRUD Engine Hybrid Database Framework
 
 **Course:** CS 432 – Databases (Semester II, 2025 - 2026)
 **Instructor:** Dr. Yogesh K. Meena
@@ -119,7 +119,7 @@ just down
 
 ```json
 {
-    "session_id": "session_assignment_1",
+    "session_id": "session_assignment_2",
     "schema_json": {
         "attribute": {
             "unique": false,

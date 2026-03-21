@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.chiral.config import get_settings
 
-SESSION_ID = "session_assignment_1"
+SESSION_ID = "session_assignment_2"
 API_BASE_URL = os.getenv("CHIRAL_API_URL", "http://127.0.0.1:8000")
 
 

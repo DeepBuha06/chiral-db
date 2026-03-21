@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 import httpx
 
 CHIRAL_API_URL = "http://127.0.0.1:8000/ingest"
-SESSION_ID = "session_assignment_1"
+SESSION_ID = "session_assignment_2"
 FLUSH_API_URL = f"http://127.0.0.1:8000/flush/{SESSION_ID}"
 TOTAL_RECORDS = 1000
 LOG_INTERVAL = 100
