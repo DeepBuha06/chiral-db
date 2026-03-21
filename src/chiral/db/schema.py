@@ -57,6 +57,36 @@ def _normalize_child_columns(entity: dict[str, Any]) -> list[str]:
     return normalized
 
 
+def _analysis_type_to_sql_type(analysis_type: str) -> str:
+    normalized_type = analysis_type.strip().lower()
+    type_map = {
+        "int": "INTEGER",
+        "float": "DOUBLE PRECISION",
+        "bool": "BOOLEAN",
+        "str": "TEXT",
+        "date": "TIMESTAMP",
+        "datetime": "TIMESTAMP",
+        "timestamp": "TIMESTAMP",
+    }
+    return type_map.get(normalized_type, "TEXT")
+
+
+def _normalize_child_column_types(entity: dict[str, Any]) -> dict[str, str]:
+    raw_types = entity.get("child_column_types", {})
+    if not isinstance(raw_types, dict):
+        return {}
+
+    normalized_types: dict[str, str] = {}
+    for column, inferred_type in raw_types.items():
+        if not isinstance(column, str) or not isinstance(inferred_type, str):
+            continue
+        normalized_column = normalize_identifier(column)
+        if not normalized_column:
+            continue
+        normalized_types[normalized_column] = _analysis_type_to_sql_type(inferred_type)
+    return normalized_types
+
+
 async def materialize_decomposition_tables(
     session: AsyncSession,
     analysis: dict[str, Any],
@@ -88,6 +118,7 @@ async def materialize_decomposition_tables(
         child_table = key_spec.table_name
         parent_fk_column = key_spec.foreign_keys[0]["local_column"]
         child_columns = _normalize_child_columns(entity)
+        child_column_types = _normalize_child_column_types(entity)
 
         create_sql = (
             f'CREATE TABLE IF NOT EXISTS "{child_table}" ('
@@ -100,7 +131,8 @@ async def materialize_decomposition_tables(
         await session.execute(text(create_sql))
 
         for column in child_columns:
-            await session.execute(text(f'ALTER TABLE "{child_table}" ADD COLUMN IF NOT EXISTS "{column}" TEXT'))
+            sql_type = child_column_types.get(column, "TEXT")
+            await session.execute(text(f'ALTER TABLE "{child_table}" ADD COLUMN IF NOT EXISTS "{column}" {sql_type}'))
 
         for foreign_key in key_spec.foreign_keys:
             constraint_name = build_fk_constraint_name(

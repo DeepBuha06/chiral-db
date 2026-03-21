@@ -75,6 +75,8 @@ def test_detect_repeating_entities_from_nested_object_arrays() -> None:
     assert entity.relationship == "one_to_many"
     assert "text" in entity.child_columns
     assert "time" in entity.child_columns
+    assert entity.child_column_types["text"] == "str"
+    assert entity.child_column_types["time"] == "int"
 
 
 def test_detect_repeating_entities_ignores_non_object_arrays() -> None:

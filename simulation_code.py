@@ -92,7 +92,7 @@ FIELD_POOL = {
 
 # --- NEW: BIAS LOGIC (Randomness inside Randomness) ---
 # Each field gets a permanent "Appearance Probability" for this server session.
-# Some will be > 0.8 (Common/SQL candidates), some < 0.2 (Rare/Mongo candidates).
+# Some will be > 0.8 (Common/SQL candidates), some < 0.2 (Rare/JSONB candidates).
 FIELD_WEIGHTS = {key: secure_random.uniform(MIN_FIELD_WEIGHT, MAX_FIELD_WEIGHT) for key in FIELD_POOL}
 
 

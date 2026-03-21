@@ -74,7 +74,7 @@ def main() -> None:
         logger.info("\nSUGGESTIONS:")
         logger.info("1. If these are old instances of Chiral, run: 'just stop-ports'")
         logger.info("2. If these are other services (e.g., local Postgres), stop them manually.")
-        logger.info("3. Or configure different ports in .env (POSTGRES_PORT, MONGO_PORT).")
+        logger.info("3. Or configure different ports in .env (POSTGRES_PORT).")
         sys.exit(1)
 
     logger.info("Port check passed. All ports available.")

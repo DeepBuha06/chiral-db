@@ -133,6 +133,7 @@ async def analyze_staging(
                     "homogeneity_ratio": entity.homogeneity_ratio,
                     "average_cardinality": entity.average_cardinality,
                     "child_columns": entity.child_columns,
+                    "child_column_types": entity.child_column_types,
                     "reason": entity.reason,
                 }
                 for entity in repeating_entities

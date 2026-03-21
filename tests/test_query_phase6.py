@@ -137,6 +137,7 @@ def test_translate_json_request_infers_join_for_child_fields() -> None:
                         "source_field": "comments",
                         "child_table": "chiral_data_comments",
                         "child_columns": ["text", "time"],
+                        "child_column_types": {"text": "str", "time": "int"},
                     }
                 ],
             },
@@ -147,6 +148,63 @@ def test_translate_json_request_infers_join_for_child_fields() -> None:
     assert '"j_comments"."chiral_data_id" = "chiral_data"."id"' in built.sql
     assert '"j_comments"."time" > :p_0' in built.sql
     assert built.params["p_0"] == 120
+
+
+def test_translate_json_request_coerces_joined_child_filter_by_inferred_type() -> None:
+    """Joined child filters should coerce bind values based on child_column_types metadata."""
+    built = translate_json_request(
+        {
+            "operation": "read",
+            "table": "chiral_data",
+            "select": ["username", "comments.is_valid"],
+            "filters": [
+                {"field": "comments.time", "op": "gte", "value": "120"},
+                {"field": "comments.is_valid", "op": "eq", "value": "true"},
+            ],
+            "decomposition_plan": {
+                "version": 1,
+                "parent_table": "chiral_data",
+                "entities": [
+                    {
+                        "source_field": "comments",
+                        "child_table": "chiral_data_comments",
+                        "child_columns": ["text", "time", "is_valid"],
+                        "child_column_types": {"text": "str", "time": "int", "is_valid": "bool"},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert '"j_comments"."time" >= :p_0' in built.sql
+    assert '"j_comments"."is_valid" = :p_1' in built.sql
+    assert built.params["p_0"] == 120
+    assert built.params["p_1"] is True
+
+
+def test_translate_json_request_rejects_invalid_joined_child_typed_filter_value() -> None:
+    """Invalid typed filter values for joined child SQL columns should fail fast."""
+    with pytest.raises(ValueError, match="Invalid filter value for inferred child type"):
+        translate_json_request(
+            {
+                "operation": "read",
+                "table": "chiral_data",
+                "select": ["username", "comments.time"],
+                "filters": [{"field": "comments.time", "op": "gt", "value": "not-int"}],
+                "decomposition_plan": {
+                    "version": 1,
+                    "parent_table": "chiral_data",
+                    "entities": [
+                        {
+                            "source_field": "comments",
+                            "child_table": "chiral_data_comments",
+                            "child_columns": ["time"],
+                            "child_column_types": {"time": "int"},
+                        }
+                    ],
+                },
+            }
+        )
 
 
 def test_translate_json_request_joined_jsonb_range_filter_type_safe() -> None:

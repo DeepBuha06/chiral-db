@@ -51,6 +51,7 @@ class RepeatingEntityDecision:
     homogeneity_ratio: float
     average_cardinality: float
     child_columns: list[str]
+    child_column_types: dict[str, str]
     reason: str
 
 
@@ -248,6 +249,7 @@ def detect_repeating_entities(
                     "homogeneous_docs": 0,
                     "total_items": 0,
                     "key_counts": {},
+                    "key_values": {},
                 },
             )
 
@@ -268,6 +270,8 @@ def detect_repeating_entities(
                 for item_key in item:
                     key_counts = field_stats["key_counts"]
                     key_counts[item_key] = key_counts.get(item_key, 0) + 1
+                    key_values = field_stats["key_values"]
+                    key_values.setdefault(item_key, []).append(item.get(item_key))
 
     decisions: list[RepeatingEntityDecision] = []
     normalized_parent = _normalize_identifier(parent_table)
@@ -290,10 +294,13 @@ def detect_repeating_entities(
 
         total_item_rows = field_stats["total_items"]
         child_columns = []
+        child_column_types: dict[str, str] = {}
         for item_key, seen_count in sorted(field_stats["key_counts"].items()):
             key_ratio = seen_count / max(1, total_item_rows)
             if key_ratio >= stable_key_ratio_threshold:
                 child_columns.append(item_key)
+            type_values = field_stats["key_values"].get(item_key, [])
+            child_column_types[item_key] = infer_dominant_type(type_values).inferred_type
 
         child_table = f"{normalized_parent}_{_normalize_identifier(source_field)}"
         decisions.append(
@@ -305,6 +312,7 @@ def detect_repeating_entities(
                 homogeneity_ratio=homogeneity_ratio,
                 average_cardinality=average_cardinality,
                 child_columns=child_columns,
+                child_column_types=child_column_types,
                 reason="homogeneous_array_of_objects",
             )
         )

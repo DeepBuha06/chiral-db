@@ -161,6 +161,9 @@ async def show_example_queries(decomposition_plan: dict[str, Any]) -> None:
     source_field = first_entity.get("source_field") if isinstance(first_entity.get("source_field"), str) else None
 
     child_columns = first_entity.get("child_columns") if isinstance(first_entity.get("child_columns"), list) else []
+    child_column_types = (
+        first_entity.get("child_column_types") if isinstance(first_entity.get("child_column_types"), dict) else {}
+    )
     first_child_col = None
     second_child_col = None
     for column in child_columns or []:
@@ -170,6 +173,24 @@ async def show_example_queries(decomposition_plan: dict[str, Any]) -> None:
             elif second_child_col is None:
                 second_child_col = column
                 break
+
+    typed_filter_field = second_child_col or first_child_col
+    typed_filter_op = "ne"
+    typed_filter_value: Any = ""
+
+    if source_field and isinstance(typed_filter_field, str):
+        inferred_type = child_column_types.get(typed_filter_field)
+        if isinstance(inferred_type, str):
+            normalized = inferred_type.strip().lower()
+            if normalized == "int":
+                typed_filter_op = "gte"
+                typed_filter_value = "1"
+            elif normalized == "float":
+                typed_filter_op = "gte"
+                typed_filter_value = "0.5"
+            elif normalized == "bool":
+                typed_filter_op = "eq"
+                typed_filter_value = "true"
 
     requests: list[dict[str, Any]] = [
         {
@@ -209,7 +230,7 @@ async def show_example_queries(decomposition_plan: dict[str, Any]) -> None:
                     },
                 },
                 {
-                    "label": "Q4 Inferred JOIN child SQL filter",
+                    "label": "Q4 Inferred JOIN child typed filter (coercion)",
                     "request": {
                         "operation": "read",
                         "table": "chiral_data",
@@ -218,8 +239,8 @@ async def show_example_queries(decomposition_plan: dict[str, Any]) -> None:
                             {"field": "session_id", "op": "eq", "value": SESSION_ID},
                             {
                                 "field": f"{source_field}.{second_child_col or first_child_col or 'id'}",
-                                "op": "ne",
-                                "value": "",
+                                "op": typed_filter_op,
+                                "value": typed_filter_value,
                             },
                         ],
                         "decomposition_plan": decomposition_plan,

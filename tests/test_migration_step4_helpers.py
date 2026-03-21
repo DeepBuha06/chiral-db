@@ -29,6 +29,7 @@ def test_build_child_insert_payload_routes_unknown_fields_to_overflow() -> None:
     entity = {
         "source_field": "comments",
         "child_columns": ["text", "time"],
+        "child_column_types": {"text": "str", "time": "int"},
     }
     child_doc = {
         "text": "nice",
@@ -50,7 +51,7 @@ def test_build_child_insert_payload_routes_unknown_fields_to_overflow() -> None:
     assert payload["chiral_data_id"] == 10
     assert payload["session_id"] == "s1"
     assert payload["text"] == "nice"
-    assert payload["time"] == "123"
+    assert payload["time"] == 123
     assert "meta" in payload["overflow_data"]
 
 
@@ -59,6 +60,7 @@ def test_build_child_insert_payload_coerces_numeric_scalars_for_text_columns() -
     entity = {
         "source_field": "comments",
         "child_columns": ["score", "comment_id"],
+        "child_column_types": {"score": "float", "comment_id": "int"},
     }
     child_doc = {
         "score": 0.611,
@@ -75,5 +77,32 @@ def test_build_child_insert_payload_coerces_numeric_scalars_for_text_columns() -
 
     assert built is not None
     _, payload = built
-    assert payload["score"] == "0.611"
-    assert payload["comment_id"] == "42"
+    assert payload["score"] == 0.611
+    assert payload["comment_id"] == 42
+
+
+def test_build_child_insert_payload_cast_failure_routes_field_to_overflow() -> None:
+    """Invalid typed cast should fallback to overflow_data instead of failing insertion."""
+    entity = {
+        "source_field": "events",
+        "child_columns": ["amount", "is_valid"],
+        "child_column_types": {"amount": "float", "is_valid": "bool"},
+    }
+    child_doc = {
+        "amount": "not-a-float",
+        "is_valid": "true",
+    }
+
+    built = _build_child_insert_payload(
+        parent_table="chiral_data",
+        session_id="s1",
+        parent_id=10,
+        entity=entity,
+        child_doc=child_doc,
+    )
+
+    assert built is not None
+    _, payload = built
+    assert "amount" not in payload
+    assert payload["is_valid"] is True
+    assert "amount" in payload["overflow_data"]

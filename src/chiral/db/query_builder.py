@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -30,6 +31,7 @@ class InferredJoin:
     source_field: str
     child_table: str
     parent_fk_column: str
+    child_column_types: dict[str, str] | None = None
 
 
 def _validate_identifier(identifier: str) -> str:
@@ -172,7 +174,7 @@ class CrudQueryBuilder:
                 msg = "Filter field must be a string"
                 raise TypeError(msg)
 
-            expression, is_jsonb = self._resolve_where_expression(field, use_table_qualification)
+            expression, is_jsonb, expected_type = self._resolve_where_expression(field, use_table_qualification)
             param_name = f"p_{index}"
 
             if is_jsonb and op in {"gt", "gte", "lt", "lte"}:
@@ -197,22 +199,22 @@ class CrudQueryBuilder:
 
             if op == "eq":
                 clauses.append(f"{expression} = :{param_name}")
-                params[param_name] = value
+                params[param_name] = self._coerce_filter_value(value, expected_type, op)
             elif op == "ne":
                 clauses.append(f"{expression} != :{param_name}")
-                params[param_name] = value
+                params[param_name] = self._coerce_filter_value(value, expected_type, op)
             elif op == "gt":
                 clauses.append(f"{expression} > :{param_name}")
-                params[param_name] = value
+                params[param_name] = self._coerce_filter_value(value, expected_type, op)
             elif op == "gte":
                 clauses.append(f"{expression} >= :{param_name}")
-                params[param_name] = value
+                params[param_name] = self._coerce_filter_value(value, expected_type, op)
             elif op == "lt":
                 clauses.append(f"{expression} < :{param_name}")
-                params[param_name] = value
+                params[param_name] = self._coerce_filter_value(value, expected_type, op)
             elif op == "lte":
                 clauses.append(f"{expression} <= :{param_name}")
-                params[param_name] = value
+                params[param_name] = self._coerce_filter_value(value, expected_type, op)
             elif op == "contains":
                 if not is_jsonb:
                     msg = "contains is only supported for overflow_data.<key> filters"
@@ -277,16 +279,16 @@ class CrudQueryBuilder:
         alias = f"{prefix}_{rest}"
         return self._join_column_expression(prefix, rest), alias
 
-    def _resolve_where_expression(self, field: str, use_table_qualification: bool) -> tuple[str, bool]:
+    def _resolve_where_expression(self, field: str, use_table_qualification: bool) -> tuple[str, bool, str | None]:
         if field.startswith("overflow_data."):
             json_key = field.split(".", 1)[1]
             _validate_identifier(json_key)
             base_expr = self._base_column_expression("overflow_data", use_table_qualification)
-            return f"{base_expr}->>'{json_key}'", True
+            return f"{base_expr}->>'{json_key}'", True, None
 
         if "." not in field:
             _validate_identifier(field)
-            return self._base_column_expression(field, use_table_qualification), False
+            return self._base_column_expression(field, use_table_qualification), False, None
 
         prefix, rest = field.split(".", 1)
         if prefix not in self._join_by_source_field:
@@ -296,10 +298,69 @@ class CrudQueryBuilder:
         if rest.startswith("overflow_data."):
             json_key = rest.split(".", 1)[1]
             _validate_identifier(json_key)
-            return f"{self._join_column_expression(prefix, 'overflow_data')}->>'{json_key}'", True
+            return f"{self._join_column_expression(prefix, 'overflow_data')}->>'{json_key}'", True, None
 
         _validate_identifier(rest)
-        return self._join_column_expression(prefix, rest), False
+        join = self._join_by_source_field[prefix]
+        expected_type = None
+        if isinstance(join.child_column_types, dict):
+            raw_type = join.child_column_types.get(rest)
+            if isinstance(raw_type, str):
+                expected_type = raw_type
+        return self._join_column_expression(prefix, rest), False, expected_type
+
+    def _raise_value_error(self, message: str) -> None:
+        raise ValueError(message)
+
+    def _coerce_filter_value(self, value: Any, expected_type: str | None, op: str) -> Any:
+        if expected_type is None or value is None:
+            return value
+
+        normalized_type = expected_type.strip().lower()
+        result = value
+
+        try:
+            if normalized_type == "int":
+                if isinstance(value, bool):
+                    self._raise_value_error("bool is not a valid int filter value")
+                result = int(value)
+
+            elif normalized_type == "float":
+                if isinstance(value, bool):
+                    self._raise_value_error("bool is not a valid float filter value")
+                result = float(value)
+
+            elif normalized_type == "bool":
+                if isinstance(value, bool):
+                    result = value
+                elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                    if value in (0, 1):
+                        result = bool(value)
+                    else:
+                        self._raise_value_error("Numeric bool filter value must be 0 or 1")
+                elif isinstance(value, str):
+                    lowered = value.strip().lower()
+                    if lowered in {"true", "1", "yes", "y"}:
+                        result = True
+                    elif lowered in {"false", "0", "no", "n"}:
+                        result = False
+                    else:
+                        self._raise_value_error("Invalid boolean filter value")
+                else:
+                    self._raise_value_error("Invalid boolean filter value")
+
+            if normalized_type in {"date", "datetime", "timestamp"}:
+                if isinstance(value, datetime):
+                    result = value
+                elif isinstance(value, str):
+                    result = datetime.fromisoformat(value)
+                else:
+                    self._raise_value_error("Invalid datetime filter value")
+        except (TypeError, ValueError) as exc:
+            msg = f"Invalid filter value for inferred child type '{normalized_type}' and op '{op}'"
+            raise ValueError(msg) from exc
+
+        return result
 
     def _base_column_expression(self, column: str, use_table_qualification: bool) -> str:
         _validate_identifier(column)

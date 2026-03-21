@@ -108,6 +108,12 @@ def _build_child_insert_payload(
 
     child_columns = entity.get("child_columns", [])
     normalized_child_columns = {normalize_identifier(column) for column in child_columns if isinstance(column, str)}
+    raw_child_column_types = entity.get("child_column_types", {})
+    normalized_child_column_types = {
+        normalize_identifier(column): inferred_type
+        for column, inferred_type in raw_child_column_types.items()
+        if isinstance(column, str) and isinstance(inferred_type, str)
+    }
 
     payload: dict[str, Any] = {
         parent_fk_column: parent_id,
@@ -118,7 +124,11 @@ def _build_child_insert_payload(
     for key, value in child_doc.items():
         normalized_key = normalize_identifier(key)
         if normalized_key in normalized_child_columns and not isinstance(value, (dict, list)):
-            payload[normalized_key] = _coerce_child_scalar_for_text_column(value)
+            expected_type = normalized_child_column_types.get(normalized_key, "str")
+            try:
+                payload[normalized_key] = cast_value(value, expected_type)
+            except (ValueError, TypeError):
+                overflow[key] = value
         else:
             overflow[key] = value
 

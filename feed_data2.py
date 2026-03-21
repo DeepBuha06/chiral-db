@@ -33,6 +33,7 @@ def _build_comment(comment_id: int) -> dict[str, object]:
         "comment_id": comment_id,
         "text": f"comment-{comment_id}",
         "score": round(random.uniform(0.0, 1.0), 3),
+        "is_flagged": random.choice([True, False]),
         "meta": {
             "lang": random.choice(["en", "fr", "de"]),
             "sentiment": random.choice(["positive", "neutral", "negative"]),
@@ -45,6 +46,7 @@ def _build_event(event_id: int) -> dict[str, object]:
         "event_id": event_id,
         "event_type": random.choice(["view", "click", "purchase"]),
         "amount": round(random.uniform(5, 500), 2),
+        "is_conversion": random.choice([True, False]),
         "extra": {
             "campaign": random.choice(["summer", "winter", "flash"]),
             "region": random.choice(["us", "eu", "apac"]),

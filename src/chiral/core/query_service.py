@@ -72,6 +72,13 @@ def _build_inferred_joins_for_request(request: dict[str, Any], table_name: str) 
         if source_field not in referenced_prefixes:
             continue
 
+        raw_child_column_types = entity.get("child_column_types", {})
+        child_column_types = {
+            str(column): str(inferred_type)
+            for column, inferred_type in raw_child_column_types.items()
+            if isinstance(column, str) and isinstance(inferred_type, str)
+        }
+
         key_spec = build_dynamic_child_key_spec(parent_table=table_name, source_field=source_field)
         parent_fk_column = key_spec.foreign_keys[0]["local_column"]
         inferred.append(
@@ -79,6 +86,7 @@ def _build_inferred_joins_for_request(request: dict[str, Any], table_name: str) 
                 source_field=source_field,
                 child_table=child_table,
                 parent_fk_column=parent_fk_column,
+                child_column_types=child_column_types,
             )
         )
 
