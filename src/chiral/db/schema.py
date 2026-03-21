@@ -22,19 +22,32 @@ async def init_metadata_table(session: AsyncSession) -> None:
     """
     await session.execute(text(sql))
 
-    # Ensure the main data table exists (initially empty)
+    # Main data table with overflow_data JSONB column (replaces MongoDB permanent collection)
     # System columns:
-    # - username: Traceability field (mandatory, present in both SQL and MongoDB)
-    # - sys_ingested_at: Server timestamp (bi-temporal, join key between SQL and MongoDB)
-    # - t_stamp: Client timestamp (bi-temporal, records when event occurred)
+    # - username: Traceability field (mandatory)
+    # - sys_ingested_at: Server timestamp (bi-temporal, join key)
+    # - t_stamp: Client timestamp (bi-temporal)
+    # - overflow_data: JSONB column for nested/unstructured data (replaces MongoDB)
     sql_data = """
     CREATE TABLE IF NOT EXISTS chiral_data (
         id SERIAL PRIMARY KEY,
         session_id TEXT,
         username TEXT,
         sys_ingested_at FLOAT,
-        t_stamp FLOAT
+        t_stamp FLOAT,
+        overflow_data JSONB DEFAULT '{}'::jsonb
     );
     """
     await session.execute(text(sql_data))
+
+    # Staging table with JSONB column (replaces MongoDB staging collection)
+    sql_staging = """
+    CREATE TABLE IF NOT EXISTS staging_data (
+        id SERIAL PRIMARY KEY,
+        session_id TEXT,
+        data JSONB NOT NULL
+    );
+    """
+    await session.execute(text(sql_staging))
+
     await session.commit()

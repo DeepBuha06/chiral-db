@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Self
 
-from pydantic import MongoDsn, PostgresDsn, computed_field, model_validator
+from pydantic import PostgresDsn, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,12 +22,6 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = ""
     POSTGRES_PORT: int = 5432
     POSTGRES_HOST: str = "localhost"
-
-    # MongoDB Configuration
-    MONGO_INITDB_ROOT_USERNAME: str = ""
-    MONGO_INITDB_ROOT_PASSWORD: str = ""
-    MONGO_PORT: int = 27017
-    MONGO_HOST: str = "localhost"
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parent.parent.parent / ".env",
@@ -42,8 +36,6 @@ class Settings(BaseSettings):
             "POSTGRES_USER",
             "POSTGRES_PASSWORD",
             "POSTGRES_DB",
-            "MONGO_INITDB_ROOT_USERNAME",
-            "MONGO_INITDB_ROOT_PASSWORD",
         ]
         missing = [f for f in required_fields if not getattr(self, f)]
         if missing:
@@ -63,20 +55,6 @@ class Settings(BaseSettings):
                 host=self.POSTGRES_HOST,
                 port=self.POSTGRES_PORT,
                 path=self.POSTGRES_DB,
-            )
-        )
-
-    @computed_field
-    @property
-    def mongo_url(self) -> str:
-        """Construct the MongoDB connection URL."""
-        return str(
-            MongoDsn.build(
-                scheme="mongodb",
-                username=self.MONGO_INITDB_ROOT_USERNAME,
-                password=self.MONGO_INITDB_ROOT_PASSWORD,
-                host=self.MONGO_HOST,
-                port=self.MONGO_PORT,
             )
         )
 

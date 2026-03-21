@@ -12,7 +12,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List
 
 
 def is_port_in_use(port: int) -> bool:
@@ -52,28 +51,29 @@ def cleanup():
         path = Path(f)
         if path.exists():
             path.unlink()
-    
+
     # Remove pycache
-    for p in Path(".").rglob("__pycache__"):
+    for p in Path().rglob("__pycache__"):
         import shutil
+
         try:
             shutil.rmtree(p)
         except Exception:
             pass
 
 
-def start_service(command: List[str], log_file: str, env=None):
+def start_service(command: list[str], log_file: str, env=None):
     """Start a service in the background and redirect output to log file."""
     log_path = Path(log_file)
     f = log_path.open("a")
-    
+
     # Use subprocess.Popen for background execution
     process = subprocess.Popen(
         command,
         stdout=f,
         stderr=subprocess.STDOUT,
         env={**os.environ, **(env or {})},
-        start_new_session=True if sys.platform != "win32" else False
+        start_new_session=True if sys.platform != "win32" else False,
     )
     return process
 
@@ -81,6 +81,7 @@ def start_service(command: List[str], log_file: str, env=None):
 def wait_for_url(url: str, timeout: int = 30, label: str = "Service"):
     """Wait for a URL to return a 200 OK status."""
     import urllib.request
+
     print(f"Waiting for {label} at {url}...")
     start_time = time.time()
     while time.time() - start_time < timeout:
@@ -101,8 +102,7 @@ def wait_for_db(timeout: int = 30):
     print("Waiting for Databases...")
     start_time = time.time()
     while time.time() - start_time < timeout:
-        result = subprocess.run([sys.executable, "verify_connections.py"], 
-                                capture_output=True, text=True)
+        result = subprocess.run([sys.executable, "verify_connections.py"], capture_output=True, text=True)
         if result.returncode == 0:
             print("   Databases are ready.")
             return True
@@ -113,7 +113,7 @@ def wait_for_db(timeout: int = 30):
 
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
-    
+
     if cmd == "stop":
         kill_process_on_port(8000)
         kill_process_on_port(8001)
@@ -124,25 +124,25 @@ if __name__ == "__main__":
         kill_process_on_port(8000)
         kill_process_on_port(8001)
         cleanup()
-        
+
         # Start API
         print("Starting Chiral API on :8000...")
         start_service(
             [sys.executable, "-m", "uvicorn", "chiral.main:app", "--port", "8000"],
             "chiral.log",
-            env={"PYTHONPATH": "src"}
+            env={"PYTHONPATH": "src"},
         )
-        
+
         # Start Simulation
         print("Starting Simulation on :8001...")
-        start_service(
-            [sys.executable, "-m", "uvicorn", "simulation_code:app", "--port", "8001"],
-            "simulation.log"
-        )
+        start_service([sys.executable, "-m", "uvicorn", "simulation_code:app", "--port", "8001"], "simulation.log")
     elif cmd == "wait":
-        if not wait_for_db(): sys.exit(1)
-        if not wait_for_url("http://127.0.0.1:8000/", label="Chiral API"): sys.exit(1)
-        if not wait_for_url("http://127.0.0.1:8001/health", label="Simulation"): sys.exit(1)
+        if not wait_for_db():
+            sys.exit(1)
+        if not wait_for_url("http://127.0.0.1:8000/", label="Chiral API"):
+            sys.exit(1)
+        if not wait_for_url("http://127.0.0.1:8001/health", label="Simulation"):
+            sys.exit(1)
     else:
         print("Unknown command")
         sys.exit(1)

@@ -5,16 +5,9 @@
 
 """Database connection factories."""
 
-from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from chiral.config import get_settings
-
-
-def get_mongo_client() -> AsyncIOMotorClient:
-    """Create a new MongoDB client."""
-    settings = get_settings()
-    return AsyncIOMotorClient(settings.mongo_url)
 
 
 def get_sql_engine() -> AsyncEngine:
