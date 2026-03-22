@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
@@ -31,6 +32,102 @@ def _extract_decomposition_plan(request: dict[str, Any]) -> dict[str, Any]:
             return nested
 
     return {"version": 1, "parent_table": "chiral_data", "entities": []}
+
+
+def _extract_session_id(request: dict[str, Any]) -> str | None:
+    direct = request.get("session_id")
+    if isinstance(direct, str) and direct:
+        return direct
+
+    payload = request.get("payload")
+    if isinstance(payload, dict):
+        payload_session_id = payload.get("session_id")
+        if isinstance(payload_session_id, str) and payload_session_id:
+            return payload_session_id
+
+    updates = request.get("updates")
+    if isinstance(updates, dict):
+        updates_session_id = updates.get("session_id")
+        if isinstance(updates_session_id, str) and updates_session_id:
+            return updates_session_id
+
+    filters = request.get("filters", [])
+    if isinstance(filters, list):
+        for item in filters:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("field", "")).lower() != "session_id":
+                continue
+            value = item.get("value")
+            if isinstance(value, str) and value:
+                return value
+
+    return None
+
+
+async def _load_decomposition_plan_from_metadata(sql_session: AsyncSession, session_id: str) -> dict[str, Any]:
+    result = await sql_session.execute(
+        text("SELECT schema_json FROM session_metadata WHERE session_id = :sid"),
+        {"sid": session_id},
+    )
+    row = result.fetchone()
+    if not row:
+        return {"version": 1, "parent_table": "chiral_data", "entities": []}
+
+    raw_schema = row[0]
+    if isinstance(raw_schema, str):
+        try:
+            schema = json.loads(raw_schema)
+        except json.JSONDecodeError:
+            schema = {}
+    elif isinstance(raw_schema, dict):
+        schema = raw_schema
+    else:
+        schema = {}
+
+    if not isinstance(schema, dict):
+        return {"version": 1, "parent_table": "chiral_data", "entities": []}
+
+    metadata = schema.get("__analysis_metadata__", {})
+    if not isinstance(metadata, dict):
+        return {"version": 1, "parent_table": "chiral_data", "entities": []}
+
+    decomposition_plan = metadata.get("decomposition_plan", {})
+    if not isinstance(decomposition_plan, dict):
+        return {"version": 1, "parent_table": "chiral_data", "entities": []}
+
+    entities = decomposition_plan.get("entities", [])
+    if not isinstance(entities, list):
+        entities = []
+
+    return {
+        "version": int(decomposition_plan.get("version", 1) or 1),
+        "parent_table": str(decomposition_plan.get("parent_table", "chiral_data")),
+        "entities": entities,
+    }
+
+
+async def _hydrate_request_with_decomposition_plan(
+    request: dict[str, Any],
+    sql_session: AsyncSession,
+) -> dict[str, Any]:
+    existing_plan = _extract_decomposition_plan(request)
+    existing_entities = existing_plan.get("entities", [])
+    if isinstance(existing_entities, list) and existing_entities:
+        return request
+
+    session_id = _extract_session_id(request)
+    if not session_id:
+        return request
+
+    metadata_plan = await _load_decomposition_plan_from_metadata(sql_session, session_id)
+    entities = metadata_plan.get("entities", [])
+    if not isinstance(entities, list) or not entities:
+        return request
+
+    hydrated = dict(request)
+    hydrated["decomposition_plan"] = metadata_plan
+    return hydrated
 
 
 def _build_inferred_joins_for_request(request: dict[str, Any], table_name: str) -> list[InferredJoin]:
@@ -133,6 +230,16 @@ def translate_json_request(request: dict[str, Any]) -> BuiltQuery:
 
 
 @session
+async def translate_json_request_with_metadata(
+    request: dict[str, Any],
+    sql_session: AsyncSession,
+) -> BuiltQuery:
+    """Translate JSON request, auto-hydrating decomposition plan from session metadata when absent."""
+    hydrated_request = await _hydrate_request_with_decomposition_plan(request, sql_session)
+    return translate_json_request(hydrated_request)
+
+
+@session
 async def execute_json_request(
     request: dict[str, Any],
     sql_session: AsyncSession,
@@ -147,7 +254,8 @@ async def _execute_json_request_impl(
 ) -> dict[str, Any]:
     """Execute translated requests (testable without session decorator)."""
     operation = str(request.get("operation", "")).lower()
-    built = translate_json_request(request)
+    hydrated_request = await _hydrate_request_with_decomposition_plan(request, sql_session)
+    built = translate_json_request(hydrated_request)
 
     result = await sql_session.execute(text(built.sql), built.params)
 

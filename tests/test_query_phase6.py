@@ -5,6 +5,7 @@
 
 """Phase 6 CRUD query generation tests."""
 
+import json
 from typing import Any, cast
 
 import pytest
@@ -150,6 +151,37 @@ def test_translate_json_request_infers_join_for_child_fields() -> None:
     assert built.params["p_0"] == 120
 
 
+def test_translate_json_request_selects_bare_child_entity_as_joined_json() -> None:
+    """Selecting a bare child entity name should project joined child row JSON."""
+    built = translate_json_request(
+        {
+            "operation": "read",
+            "table": "chiral_data",
+            "select": ["username", "comments"],
+            "filters": [
+                {"field": "session_id", "op": "eq", "value": "session_assignment_2"},
+                {"field": "comments.score", "op": "gte", "value": "0.5"},
+            ],
+            "decomposition_plan": {
+                "version": 1,
+                "parent_table": "chiral_data",
+                "entities": [
+                    {
+                        "source_field": "comments",
+                        "child_table": "chiral_data_comments",
+                        "child_columns": ["score"],
+                        "child_column_types": {"score": "float"},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert 'row_to_json("j_comments") AS "comments"' in built.sql
+    assert '"chiral_data"."comments"' not in built.sql
+    assert built.params["p_1"] == 0.5
+
+
 def test_translate_json_request_coerces_joined_child_filter_by_inferred_type() -> None:
     """Joined child filters should coerce bind values based on child_column_types metadata."""
     built = translate_json_request(
@@ -289,3 +321,107 @@ async def test_execute_json_request_read_returns_rows(monkeypatch: pytest.Monkey
 
     assert response["row_count"] == 1
     assert response["rows"][0]["username"] == "alice"
+
+
+@pytest.mark.asyncio
+async def test_hydrate_request_with_decomposition_plan_from_metadata() -> None:
+    """Missing decomposition_plan should be auto-loaded from session metadata using session_id."""
+
+    class DummyResult:
+        def __init__(self, row: tuple[Any, ...] | None) -> None:
+            self._row = row
+
+        def fetchone(self) -> tuple[Any, ...] | None:
+            return self._row
+
+    class DummySession:
+        async def execute(self, _statement: str, params: dict[str, Any]) -> DummyResult:
+            assert params["sid"] == "s1"
+            schema_json = {
+                "__analysis_metadata__": {
+                    "decomposition_plan": {
+                        "version": 1,
+                        "parent_table": "chiral_data",
+                        "entities": [
+                            {
+                                "source_field": "comments",
+                                "child_table": "chiral_data_comments",
+                                "child_columns": ["text", "time"],
+                            }
+                        ],
+                    }
+                }
+            }
+            return DummyResult((json.dumps(schema_json),))
+
+    request = {
+        "operation": "read",
+        "table": "chiral_data",
+        "select": ["username", "comments.text"],
+        "filters": [{"field": "session_id", "op": "eq", "value": "s1"}],
+    }
+
+    hydrated = await query_service._hydrate_request_with_decomposition_plan(
+        request,
+        cast("Any", DummySession()),
+    )
+
+    plan = hydrated.get("decomposition_plan")
+    assert isinstance(plan, dict)
+    assert len(plan.get("entities", [])) == 1
+    assert plan["entities"][0]["source_field"] == "comments"
+
+
+@pytest.mark.asyncio
+async def test_execute_json_request_impl_auto_hydrates_metadata_when_plan_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Execute path should auto-hydrate decomposition plan before translation when request omits it."""
+
+    class DummySession:
+        async def execute(self, _statement: str, _params: dict[str, Any]) -> Any:
+            class DummyResult:
+                def mappings(self) -> "DummyResult":
+                    return self
+
+                def all(self) -> list[dict[str, Any]]:
+                    return [{"username": "alice"}]
+
+            return DummyResult()
+
+    async def fake_hydrate(request: dict[str, Any], _sql_session: Any) -> dict[str, Any]:
+        hydrated = dict(request)
+        hydrated["decomposition_plan"] = {
+            "version": 1,
+            "parent_table": "chiral_data",
+            "entities": [
+                {
+                    "source_field": "comments",
+                    "child_table": "chiral_data_comments",
+                    "child_columns": ["text"],
+                }
+            ],
+        }
+        return hydrated
+
+    captured: dict[str, Any] = {}
+
+    def fake_translate(request: dict[str, Any]) -> BuiltQuery:
+        captured.update(request)
+        return BuiltQuery(sql='SELECT "username" FROM "chiral_data"', params={})
+
+    monkeypatch.setattr(query_service, "_hydrate_request_with_decomposition_plan", fake_hydrate)
+    monkeypatch.setattr(query_service, "translate_json_request", fake_translate)
+
+    response = await query_service._execute_json_request_impl(
+        {
+            "operation": "read",
+            "table": "chiral_data",
+            "select": ["username", "comments.text"],
+            "filters": [{"field": "session_id", "op": "eq", "value": "s1"}],
+        },
+        sql_session=cast("Any", DummySession()),
+    )
+
+    assert "decomposition_plan" in captured
+    assert response["row_count"] == 1

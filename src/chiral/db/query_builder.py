@@ -261,6 +261,9 @@ class CrudQueryBuilder:
         use_table_qualification: bool,
     ) -> tuple[str, str | None]:
         if "." not in field:
+            if field in self._join_by_source_field:
+                alias = self._join_alias(field)
+                return f'row_to_json("{alias}")', field
             _validate_identifier(field)
             return self._base_column_expression(field, use_table_qualification), None
 
