@@ -102,7 +102,6 @@ async def analyze_staging(
             # "field_stability_ratio": field_stability_ratio,
             "explainability": {
                 "type_reason": type_decision.reason,
-                "tie_break_applied": type_decision.tie_break_applied,
                 "strategy_rule": strategy_decision.strategy_rule,
                 "type_confidence_threshold": policy.type_confidence_threshold,
                 "uniqueness_confidence_threshold": policy.uniqueness_confidence_threshold,

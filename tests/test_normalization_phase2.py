@@ -20,14 +20,12 @@ def test_infer_dominant_type_picks_clear_majority() -> None:
     decision = infer_dominant_type([1, 2, 3, "4"])
     assert decision.inferred_type == "int"
     assert decision.confidence == 0.75
-    assert not decision.tie_break_applied
 
 
 def test_infer_dominant_type_tie_defaults_to_str() -> None:
     """Equal top counts should trigger deterministic tie-break to str."""
     decision = infer_dominant_type([1, "1", 2, "2"])
     assert decision.inferred_type == "str"
-    assert decision.tie_break_applied
     assert decision.reason == "type_count_tie_default_to_str"
 
 

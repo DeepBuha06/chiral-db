@@ -27,7 +27,6 @@ class DominantTypeDecision:
 
     inferred_type: str
     confidence: float
-    tie_break_applied: bool
     reason: str
 
 
@@ -77,7 +76,6 @@ def infer_dominant_type(values: list[Any]) -> DominantTypeDecision:
         return DominantTypeDecision(
             inferred_type="str",
             confidence=1.0,
-            tie_break_applied=False,
             reason="all_values_null_default_to_str",
         )
 
@@ -95,14 +93,12 @@ def infer_dominant_type(values: list[Any]) -> DominantTypeDecision:
         return DominantTypeDecision(
             inferred_type="str",
             confidence=confidence,
-            tie_break_applied=True,
             reason="type_count_tie_default_to_str",
         )
 
     return DominantTypeDecision(
         inferred_type=dominant_type,
         confidence=confidence,
-        tie_break_applied=False,
         reason="dominant_type_selected",
     )
 

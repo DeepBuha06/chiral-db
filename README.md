@@ -132,7 +132,6 @@ just down
             "field_stability_ratio": 1.0,
             "explainability": {
                 "type_reason": "dominant_type_selected",
-                "tie_break_applied": false,
                 "strategy_rule": "stable_scalar_field",
                 "type_confidence_threshold": 0.8,
                 "uniqueness_confidence_threshold": 1.0,
@@ -202,13 +201,7 @@ just down
 
 **Field Explanations**:
 
-**1. `tie_break_applied` (Boolean)**
-   - **Purpose**: Indicates whether a type tie-break rule was invoked during type inference.
-   - **When true**: Multiple types had equal frequency in the sample (e.g., 5 records with `int` and 5 with `str`). System defaults to `str` type to avoid fragmentation.
-   - **When false**: One type dominated (e.g., 90% `int`, 10% `str`), so the dominant type was selected.
-   - **Impact**: If `true` + type_confidence < 0.8, the field will route to JSONB (type_drift detected).
-
-**2. `drift_events` (Array)**
+**1. `drift_events` (Array)**
    - **Purpose**: Tracks schema evolution events—when fields migrate to JSONB or decomposition plan changes.
    - **Event Types**:
      - `column_migrated_to_jsonb`: Emitted when a column transitions from SQL to JSONB due to type drift. Stores `previous_type` for audit trail.
@@ -216,7 +209,7 @@ just down
    - **Use Case**: Audit trail for schema mutations; enables rollback/remediation workflows; tracks when new child tables created.
    - **Guardrail**: Bounded to 200 events per session (configurable via `GUARDRAIL_MAX_DRIFT_EVENTS_PER_SESSION`).
 
-**3. `safety_events` (Array)**
+**2. `safety_events` (Array)**
    - **Purpose**: Tracks guardrail triggers—when fields breached size or nesting constraints and were routed to JSONB for safety.
    - **Event Types**:
      - `guardrail_route_to_jsonb` (reason: `field_size_exceeded`): Field JSON serialization exceeded max bytes (default 5MB per field).
