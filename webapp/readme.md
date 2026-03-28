@@ -8,9 +8,9 @@ This is the interactive visual frontend for the ChiralDB Autonomous Normalizatio
 
 ## Quick Start
 
-1. **Navigate to the application directory**
+1. **Navigate to the dashboard directory**
    ```bash
-   cd my-react-flow-app
+   cd dashboard
    ```
 
 2. **Install dependencies**
