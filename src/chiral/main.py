@@ -13,6 +13,7 @@ from typing import Any
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from chiral.core.ingestion import ingest_data
@@ -24,6 +25,14 @@ from chiral.core.query_service import (
 )
 
 app = FastAPI(title="Chiral DB Assignment")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class IngestRequest(BaseModel):
@@ -100,3 +109,55 @@ async def execute_query_endpoint(request: QueryTranslateRequest) -> dict[str, An
                 "error": str(exc),
             },
         ) from exc
+
+
+@app.get("/schema/metadata")
+async def schema_metadata_endpoint() -> dict[str, Any]:
+    """Dynamically reflects the live PostgreSQL database schema."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from chiral.db.sessions import session
+
+    @session
+    async def _fetch(sql_session: AsyncSession = None) -> dict[str, Any]:
+        from sqlalchemy import text
+
+        schema = {}
+
+        # Query all public tables manually to avoid run_sync deadlocks
+        result = await sql_session.execute(
+            text(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+            )
+        )
+        valid_tables = [row[0] for row in result.fetchall()]
+
+        for t in valid_tables:
+            cols_result = await sql_session.execute(
+                text("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :t"), {"t": t}
+            )
+            cols = [{"name": row[0], "type": row[1]} for row in cols_result.fetchall()]
+
+            # Fetch 3 preview rows to populate the schema node hover views dynamically!
+            try:
+                sample_result = await sql_session.execute(text(f"SELECT * FROM {t} LIMIT 3"))
+                # JSON serialize simple types for UI compatibility
+                sample_data = []
+                for row in sample_result.fetchall():
+                    row_dict = {}
+                    for i, key in enumerate(sample_result.keys()):
+                        val = row[i]
+                        row_dict[key] = str(val) if val is not None else None
+                    sample_data.append(row_dict)
+            except Exception:
+                sample_data = []
+
+            schema[t] = {
+                "columns": cols,
+                "primary_keys": ["id" if t != "session_metadata" else "session_id"],
+                "foreign_keys": [],
+                "sampleData": sample_data,
+            }
+        return schema
+
+    return await _fetch()
