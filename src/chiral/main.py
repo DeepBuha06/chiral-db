@@ -15,6 +15,8 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from chiral.core.ingestion import ingest_data
 from chiral.core.orchestrator import flush_staging, trigger_worker
@@ -23,11 +25,12 @@ from chiral.core.query_service import (
     execute_json_request,
     translate_json_request_with_metadata,
 )
+from chiral.db.sessions import session
 
 app = FastAPI(title="Chiral DB Assignment")
 
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware,  # type: ignore[arg-type]
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
@@ -114,14 +117,9 @@ async def execute_query_endpoint(request: QueryTranslateRequest) -> dict[str, An
 @app.get("/schema/metadata")
 async def schema_metadata_endpoint() -> dict[str, Any]:
     """Dynamically reflects the live PostgreSQL database schema."""
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-    from chiral.db.sessions import session
 
     @session
-    async def _fetch(sql_session: AsyncSession = None) -> dict[str, Any]:
-        from sqlalchemy import text
-
+    async def _fetch(sql_session: AsyncSession) -> dict[str, Any]:
         schema = {}
 
         # Query all public tables manually to avoid run_sync deadlocks

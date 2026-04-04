@@ -7,6 +7,11 @@ setup:
 verify: format lint type test
     @echo "Checks passed."
 
+# Run ACID integration tests against PostgreSQL
+test-acid:
+    docker compose up -d postgres
+    uv run pytest tests/test_acid_properties.py -v
+
 # Format code
 format:
     uv run ruff format .
