@@ -145,7 +145,10 @@ async def schema_metadata_endpoint() -> dict[str, Any]:
                     row_dict = {}
                     for i, key in enumerate(sample_result.keys()):
                         val = row[i]
-                        row_dict[key] = str(val) if val is not None else None
+                        if isinstance(val, (dict, list, str, int, float, bool)) or val is None:
+                            row_dict[key] = val
+                        else:
+                            row_dict[key] = str(val)
                     sample_data.append(row_dict)
             except Exception:
                 sample_data = []

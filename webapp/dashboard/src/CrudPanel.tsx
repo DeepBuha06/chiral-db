@@ -21,6 +21,8 @@ const KNOWN_SESSION_IDS = [
     'session_test_01'
 ];
 
+const TABLE_FALLBACK_ORDER = ['chiral_data', 'staging_data', 'session_metadata'];
+
 type Operation = 'read' | 'create' | 'update' | 'delete';
 
 interface ResultTab {
@@ -71,12 +73,11 @@ interface CrudPanelProps {
 const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
     const [operation, setOperation] = useState<Operation>('read');
     const [schema, setSchema] = useState<DatabaseSchema>({});
-    const [fetchingSchema, setFetchingSchema] = useState(true);
+    const [, setFetchingSchema] = useState(true);
 
-    const [table, setTable] = useState('chiral_data');
     const [sessionId, setSessionId] = useState('session_assignment_2');
-    const [selectFields, setSelectFields] = useState<string>('*');
-    const [filterField, setFilterField] = useState('session_id');
+    const [selectFields, setSelectFields] = useState<string>('');
+    const [filterField, setFilterField] = useState('');
     const [filterOp, setFilterOp] = useState('eq');
     const [filterValue, setFilterValue] = useState('');
     const [limit, setLimit] = useState<number | string>(10);
@@ -108,17 +109,97 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
 
     const tableList = useMemo(() => Object.keys(schema), [schema]);
     const columnOptions = useMemo(() => {
-        if (!schema[table]) return ['*'];
-        return ['*', ...schema[table].columns.map(c => c.name)];
-    }, [schema, table]);
+        const allColumns = new Set<string>();
 
-    useEffect(() => {
-        if (!fetchingSchema && schema[table]) {
-            const firstValidCol = schema[table].columns[0]?.name || '*';
-            setFilterField(table === 'chiral_data' ? 'session_id' : firstValidCol);
-            setFilterValue('');
+        const parseObjectValue = (value: unknown): Record<string, unknown> | null => {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                return value as Record<string, unknown>;
+            }
+            if (typeof value === 'string') {
+                try {
+                    const parsed = JSON.parse(value) as unknown;
+                    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                        return parsed as Record<string, unknown>;
+                    }
+                } catch {
+                    return null;
+                }
+            }
+            return null;
+        };
+
+        tableList.forEach(tableName => {
+            const tableSchema = schema[tableName];
+            tableSchema.columns.forEach(col => allColumns.add(col.name));
+
+            const hasOverflowData = tableSchema.columns.some(col => col.name === 'overflow_data');
+            if (!hasOverflowData || !tableSchema.sampleData) {
+                return;
+            }
+
+            tableSchema.sampleData.forEach(sampleRow => {
+                const parsedOverflow = parseObjectValue(sampleRow.overflow_data);
+                if (!parsedOverflow) {
+                    return;
+                }
+
+                Object.keys(parsedOverflow).forEach(key => {
+                    allColumns.add(`overflow_data.${key}`);
+                });
+            });
+        });
+        return Array.from(allColumns).sort((a, b) => a.localeCompare(b));
+    }, [schema, tableList]);
+
+    const filterColumnOptions = useMemo(() => {
+        return columnOptions.filter(c => c !== 'session_id');
+    }, [columnOptions]);
+
+    const inferTableFromMetadata = useCallback((fields: string[]) => {
+        const cleanFields = Array.from(new Set(fields.map(f => f.trim()).filter(Boolean)));
+
+        if (tableList.length === 0) {
+            return { table: null as string | null, reason: 'Schema not loaded. Please retry in a moment.' };
         }
-    }, [table, schema, fetchingSchema]);
+
+        if (cleanFields.length === 0) {
+            const fallback = TABLE_FALLBACK_ORDER.find(t => tableList.includes(t)) || tableList[0];
+            return { table: fallback, reason: '' };
+        }
+
+        const candidates = tableList.filter(tableName => {
+            const cols = new Set(schema[tableName].columns.map(c => c.name));
+            return cleanFields.every(field => {
+                if (cols.has(field)) {
+                    return true;
+                }
+                if (field.startsWith('overflow_data.')) {
+                    return cols.has('overflow_data');
+                }
+                return false;
+            });
+        });
+
+        if (candidates.length === 1) {
+            return { table: candidates[0], reason: '' };
+        }
+        if (candidates.length === 0) {
+            return {
+                table: null as string | null,
+                reason: `No table matches fields: ${cleanFields.join(', ')}`,
+            };
+        }
+
+        const preferred = TABLE_FALLBACK_ORDER.find(t => candidates.includes(t));
+        if (preferred) {
+            return { table: preferred, reason: '' };
+        }
+
+        return {
+            table: null as string | null,
+            reason: `Ambiguous fields (${cleanFields.join(', ')}) match multiple tables: ${candidates.join(', ')}. Add a more specific field/filter.`,
+        };
+    }, [schema, tableList]);
 
     const startResize = useCallback((mouseDownEvent: React.MouseEvent) => {
         mouseDownEvent.preventDefault();
@@ -143,19 +224,73 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
         setError(null);
         setLoading(true);
 
-        const req: QueryRequest = { operation, table };
+        const selectedReadFields = selectFields
+            ? selectFields.split(',').map(s => s.trim()).filter(Boolean)
+            : [];
+
+        if (operation === 'read' && selectedReadFields.length === 0) {
+            setError('Please enter required fields in Select Fields.');
+            setLoading(false);
+            return;
+        }
+
+        const hasFilterField = filterField.trim().length > 0;
+        const hasFilterValue = filterValue.trim().length > 0;
+        const hasFullFilter = hasFilterField && hasFilterValue;
+
+        if (operation === 'read' && (hasFilterField !== hasFilterValue)) {
+            setError('Please provide both filter field and value, or leave both empty.');
+            setLoading(false);
+            return;
+        }
+
+        const inferredFields: string[] = [];
+
+        if (operation === 'read') {
+            inferredFields.push(...selectedReadFields);
+        }
+        if (hasFullFilter) {
+            inferredFields.push(filterField);
+        }
+        if (operation === 'create') {
+            try {
+                const parsedPayload = JSON.parse(payloadJson) as Record<string, unknown>;
+                inferredFields.push(...Object.keys(parsedPayload));
+            } catch {
+                setError('Invalid JSON payload for CREATE');
+                setLoading(false);
+                return;
+            }
+        }
+        if (operation === 'update') {
+            try {
+                const parsedUpdates = JSON.parse(updatesJson) as Record<string, unknown>;
+                inferredFields.push(...Object.keys(parsedUpdates));
+            } catch {
+                setError('Invalid JSON payload for UPDATE');
+                setLoading(false);
+                return;
+            }
+        }
+
+        const inferred = inferTableFromMetadata(inferredFields);
+        if (!inferred.table) {
+            setError(inferred.reason);
+            setLoading(false);
+            return;
+        }
+
+        const req: QueryRequest = { operation, table: inferred.table };
         if (sessionId) req.session_id = sessionId;
 
         if (operation === 'read') {
-            if (selectFields && selectFields !== '*') {
-                req.select = selectFields.split(',').map(s => s.trim()).filter(Boolean);
-            }
+            req.select = selectedReadFields;
             if (limit) {
                 req.limit = typeof limit === 'string' ? parseInt(limit, 10) : limit;
             }
         }
 
-        if (filterField && filterValue && filterField !== '*') {
+        if (hasFullFilter) {
             let val: string | number | boolean = filterValue;
             if (!isNaN(Number(val)) && typeof val === 'string' && val.trim() !== '') {
                 val = Number(val);
@@ -168,28 +303,17 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
         }
 
         if (operation === 'create') {
-            try {
-                req.payload = JSON.parse(payloadJson);
-            } catch {
-                setError('Invalid JSON payload for CREATE');
-                setLoading(false);
-                return;
-            }
+            req.payload = JSON.parse(payloadJson);
         }
 
         if (operation === 'update') {
-            try {
-                req.updates = JSON.parse(updatesJson);
-            } catch {
-                setError('Invalid JSON payload for UPDATE');
-                setLoading(false);
-                return;
-            }
+            req.updates = JSON.parse(updatesJson);
         }
 
         try {
             const response = await executeQuery(req);
-            const tabLabel = `${operation.toUpperCase()} ${table.split('_').slice(0, 2).join('_')}`;
+            const resolvedTable = req.table || 'unknown_table';
+            const tabLabel = `${operation.toUpperCase()} ${resolvedTable.split('_').slice(0, 2).join('_')}`;
 
             setResultTabs(prev => {
                 const existingIdx = prev.findIndex(t => t.label === tabLabel);
@@ -226,7 +350,7 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
         } finally {
             setLoading(false);
         }
-    }, [operation, table, sessionId, selectFields, filterField, filterOp, filterValue, payloadJson, updatesJson, limit, onDataChanged]);
+    }, [operation, sessionId, selectFields, filterField, filterOp, filterValue, payloadJson, updatesJson, limit, onDataChanged, inferTableFromMetadata]);
 
     const activeTab = resultTabs.find(t => t.id === activeTabId);
 
@@ -258,17 +382,9 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
 
                     <div className="crud-row">
                         <label>Table</label>
-                        {fetchingSchema ? (
-                            <div className="crud-input" style={{ opacity: 0.5 }}>Loading tables...</div>
-                        ) : (
-                            <SearchableDropdown
-                                options={tableList.length > 0 ? tableList : ['chiral_data', 'session_metadata']}
-                                value={table}
-                                onChange={setTable}
-                                placeholder="Search tables..."
-                                allowFreeText
-                            />
-                        )}
+                        <div className="crud-input" style={{ opacity: 0.8 }}>
+                            Auto-detected from schema metadata using selected fields and filter.
+                        </div>
                     </div>
 
                     <div className="crud-row">
@@ -306,7 +422,7 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
                         <label>Filter</label>
                         <div className="crud-filter-row">
                             <SearchableDropdown
-                                options={columnOptions.filter(c => c !== '*')}
+                                options={filterColumnOptions}
                                 value={filterField}
                                 onChange={setFilterField}
                                 placeholder="field"

@@ -63,7 +63,7 @@ export interface TableSchema {
     columns: SchemaColumn[];
     primary_keys: string[];
     foreign_keys: SchemaForeignKey[];
-    sampleData?: Record<string, string>[];
+    sampleData?: Record<string, unknown>[];
 }
 
 export type DatabaseSchema = Record<string, TableSchema>;

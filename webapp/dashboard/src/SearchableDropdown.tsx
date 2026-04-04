@@ -22,12 +22,32 @@ const SearchableDropdown: FC<SearchableDropdownProps> = ({
     const inputRef = useRef<HTMLInputElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // For multiple mode, get the "current token" being typed
-    const currentToken = multiple ? (value.split(',').pop()?.trim() ?? '') : value;
+    const selectedParts = multiple
+        ? value.split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+    const hasTrailingComma = multiple ? /,\s*$/.test(value) : false;
+    const currentToken = multiple
+        ? (hasTrailingComma ? '' : (value.split(',').pop()?.trim() ?? ''))
+        : value;
+    const committedSelections = multiple
+        ? (hasTrailingComma ? selectedParts : selectedParts.slice(0, -1))
+        : [];
 
-    const filtered = options.filter(opt =>
-        opt.toLowerCase().includes((multiple ? currentToken : search || value).toLowerCase())
-    );
+    const filtered = options.filter(opt => {
+        if (!multiple) {
+            return opt.toLowerCase().includes((search || value).toLowerCase());
+        }
+
+        const isAlreadySelected = committedSelections.includes(opt);
+        const tokenLower = currentToken.toLowerCase();
+        const matchesToken = tokenLower.length === 0 || opt.toLowerCase().includes(tokenLower);
+
+        if (isAlreadySelected) {
+            return false;
+        }
+
+        return matchesToken;
+    });
 
     const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const v = e.target.value;
@@ -81,10 +101,10 @@ const SearchableDropdown: FC<SearchableDropdownProps> = ({
             </svg>
             {open && filtered.length > 0 && (
                 <div className="sd-dropdown">
-                    {filtered.slice(0, 12).map(opt => (
+                    {filtered.map(opt => (
                         <div
                             key={opt}
-                            className={`sd-option ${opt === value ? 'selected' : ''}`}
+                            className={`sd-option ${multiple ? (committedSelections.includes(opt) ? 'selected' : '') : (opt === value ? 'selected' : '')}`}
                             onMouseDown={(e) => { e.preventDefault(); handleSelect(opt); }}
                         >
                             {opt}
