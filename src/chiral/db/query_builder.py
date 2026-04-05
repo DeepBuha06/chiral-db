@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -116,6 +117,25 @@ class CrudQueryBuilder:
         params: dict[str, Any] = {}
 
         for key, value in updates.items():
+            if key.startswith("overflow_data."):
+                path_parts = [part for part in key.split(".")[1:] if part]
+                if not path_parts:
+                    msg = "overflow_data update path cannot be empty"
+                    raise ValueError(msg)
+                for part in path_parts:
+                    _validate_identifier(part)
+
+                param_name = f"set_json_{'_'.join(path_parts)}"
+                path_literal = "{" + ",".join(path_parts) + "}"
+                set_clauses.append(
+                    '"overflow_data" = jsonb_set('
+                    "COALESCE(\"overflow_data\", '{}'::jsonb), "
+                    f"'{path_literal}', "
+                    f"CAST(:{param_name} AS jsonb), true)"
+                )
+                params[param_name] = json.dumps(value)
+                continue
+
             _validate_identifier(key)
             set_clauses.append(f'"{key}" = :set_{key}')
             params[f"set_{key}"] = value

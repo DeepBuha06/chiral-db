@@ -22,6 +22,7 @@ const KNOWN_SESSION_IDS = [
 ];
 
 const TABLE_FALLBACK_ORDER = ['chiral_data', 'staging_data', 'session_metadata'];
+const JOIN_PARENT_TABLE = 'chiral_data';
 
 type Operation = 'read' | 'create' | 'update' | 'delete';
 
@@ -108,6 +109,20 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
     }, []);
 
     const tableList = useMemo(() => Object.keys(schema), [schema]);
+    const joinSourceByTable = useMemo(() => {
+        const mapping = new Map<string, string>();
+        tableList.forEach(tableName => {
+            if (tableName.startsWith('chiral_data_')) {
+                mapping.set(tableName, tableName.replace(/^chiral_data_/, ''));
+            }
+        });
+        return mapping;
+    }, [tableList]);
+
+    const parentColumns = useMemo(() => {
+        const cols = schema[JOIN_PARENT_TABLE]?.columns ?? [];
+        return new Set(cols.map(col => col.name));
+    }, [schema]);
     const columnOptions = useMemo(() => {
         const allColumns = new Set<string>();
 
@@ -130,7 +145,15 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
 
         tableList.forEach(tableName => {
             const tableSchema = schema[tableName];
-            tableSchema.columns.forEach(col => allColumns.add(col.name));
+            const joinSource = joinSourceByTable.get(tableName);
+
+            tableSchema.columns.forEach(col => {
+                if (joinSource) {
+                    allColumns.add(`${joinSource}.${col.name}`);
+                } else {
+                    allColumns.add(col.name);
+                }
+            });
 
             const hasOverflowData = tableSchema.columns.some(col => col.name === 'overflow_data');
             if (!hasOverflowData || !tableSchema.sampleData) {
@@ -149,11 +172,48 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
             });
         });
         return Array.from(allColumns).sort((a, b) => a.localeCompare(b));
-    }, [schema, tableList]);
+    }, [schema, tableList, joinSourceByTable]);
 
     const filterColumnOptions = useMemo(() => {
         return columnOptions.filter(c => c !== 'session_id');
     }, [columnOptions]);
+
+    const normalizeReadField = useCallback((field: string): { field: string | null; reason: string } => {
+        const clean = field.trim();
+        if (!clean) {
+            return { field: null, reason: '' };
+        }
+
+        // Already-qualified fields are passed through so backend join inference can consume them.
+        if (clean.includes('.')) {
+            return { field: clean, reason: '' };
+        }
+
+        if (parentColumns.has(clean)) {
+            return { field: clean, reason: '' };
+        }
+
+        const childMatches: string[] = [];
+        for (const [tableName, sourceField] of joinSourceByTable.entries()) {
+            const childCols = schema[tableName]?.columns ?? [];
+            if (childCols.some(col => col.name === clean)) {
+                childMatches.push(sourceField);
+            }
+        }
+
+        if (childMatches.length === 1) {
+            return { field: `${childMatches[0]}.${clean}`, reason: '' };
+        }
+
+        if (childMatches.length > 1) {
+            return {
+                field: null,
+                reason: `Field '${clean}' exists in multiple joined entities (${childMatches.join(', ')}). Use an explicit prefix like entity.${clean}.`,
+            };
+        }
+
+        return { field: clean, reason: '' };
+    }, [joinSourceByTable, parentColumns, schema]);
 
     const inferTableFromMetadata = useCallback((fields: string[]) => {
         const cleanFields = Array.from(new Set(fields.map(f => f.trim()).filter(Boolean)));
@@ -165,6 +225,17 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
         if (cleanFields.length === 0) {
             const fallback = TABLE_FALLBACK_ORDER.find(t => tableList.includes(t)) || tableList[0];
             return { table: fallback, reason: '' };
+        }
+
+        const hasJoinStyleField = cleanFields.some(field => field.includes('.') && !field.startsWith('overflow_data.'));
+        if (hasJoinStyleField) {
+            if (tableList.includes(JOIN_PARENT_TABLE)) {
+                return { table: JOIN_PARENT_TABLE, reason: '' };
+            }
+            return {
+                table: null as string | null,
+                reason: `Join-style fields require '${JOIN_PARENT_TABLE}' table, but it was not found in reflected schema.`,
+            };
         }
 
         const candidates = tableList.filter(tableName => {
@@ -224,9 +295,12 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
         setError(null);
         setLoading(true);
 
-        const selectedReadFields = selectFields
+        const selectedReadFieldsRaw = selectFields
             ? selectFields.split(',').map(s => s.trim()).filter(Boolean)
             : [];
+
+        let selectedReadFields = selectedReadFieldsRaw;
+        let resolvedFilterField = filterField;
 
         if (operation === 'read' && selectedReadFields.length === 0) {
             setError('Please enter required fields in Select Fields.');
@@ -244,13 +318,37 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
             return;
         }
 
+        if (operation === 'read') {
+            const normalizedReadFields: string[] = [];
+            for (const field of selectedReadFieldsRaw) {
+                const normalized = normalizeReadField(field);
+                if (!normalized.field) {
+                    setError(normalized.reason || `Unable to resolve field '${field}'`);
+                    setLoading(false);
+                    return;
+                }
+                normalizedReadFields.push(normalized.field);
+            }
+            selectedReadFields = normalizedReadFields;
+
+            if (hasFullFilter) {
+                const normalizedFilter = normalizeReadField(filterField);
+                if (!normalizedFilter.field) {
+                    setError(normalizedFilter.reason || `Unable to resolve filter field '${filterField}'`);
+                    setLoading(false);
+                    return;
+                }
+                resolvedFilterField = normalizedFilter.field;
+            }
+        }
+
         const inferredFields: string[] = [];
 
         if (operation === 'read') {
             inferredFields.push(...selectedReadFields);
         }
         if (hasFullFilter) {
-            inferredFields.push(filterField);
+            inferredFields.push(operation === 'read' ? resolvedFilterField : filterField);
         }
         if (operation === 'create') {
             try {
@@ -299,7 +397,7 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
             } else if (typeof val === 'string' && val.toLowerCase() === 'false') {
                 val = false;
             }
-            req.filters = [{ field: filterField, operator: filterOp, value: val }];
+            req.filters = [{ field: operation === 'read' ? resolvedFilterField : filterField, operator: filterOp, value: val }];
         }
 
         if (operation === 'create') {
@@ -350,7 +448,7 @@ const CrudPanel: React.FC<CrudPanelProps> = ({ onDataChanged }) => {
         } finally {
             setLoading(false);
         }
-    }, [operation, sessionId, selectFields, filterField, filterOp, filterValue, payloadJson, updatesJson, limit, onDataChanged, inferTableFromMetadata]);
+    }, [operation, sessionId, selectFields, filterField, filterOp, filterValue, payloadJson, updatesJson, limit, onDataChanged, inferTableFromMetadata, normalizeReadField]);
 
     const activeTab = resultTabs.find(t => t.id === activeTabId);
 

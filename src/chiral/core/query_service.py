@@ -697,25 +697,11 @@ def _extract_session_id(request: dict[str, Any]) -> str | None:
 
 
 async def _load_decomposition_plan_from_metadata(sql_session: AsyncSession, session_id: str) -> dict[str, Any]:
-    result = await sql_session.execute(
-        text("SELECT schema_json FROM session_metadata WHERE session_id = :sid"),
-        {"sid": session_id},
-    )
-    row = result.fetchone()
-    if not row:
-        return {"version": 1, "parent_table": "chiral_data", "entities": []}
+    schema = await _load_schema_from_metadata(sql_session, session_id)
+    return _extract_decomposition_plan_from_schema(schema)
 
-    raw_schema = row[0]
-    if isinstance(raw_schema, str):
-        try:
-            schema = json.loads(raw_schema)
-        except json.JSONDecodeError:
-            schema = {}
-    elif isinstance(raw_schema, dict):
-        schema = raw_schema
-    else:
-        schema = {}
 
+def _extract_decomposition_plan_from_schema(schema: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(schema, dict):
         return {"version": 1, "parent_table": "chiral_data", "entities": []}
 
@@ -738,25 +724,95 @@ async def _load_decomposition_plan_from_metadata(sql_session: AsyncSession, sess
     }
 
 
+def _rewrite_updates_for_jsonb_targets(
+    updates: dict[str, Any],
+    schema: dict[str, Any],
+) -> dict[str, Any]:
+    rewritten: dict[str, Any] = {}
+    for key, value in updates.items():
+        if not isinstance(key, str):
+            rewritten[key] = value
+            continue
+
+        if key == "overflow_data" or key.startswith("overflow_data."):
+            rewritten[key] = value
+            continue
+
+        if "." in key:
+            rewritten[key] = value
+            continue
+
+        meta = schema.get(key)
+        if isinstance(meta, dict) and str(meta.get("target", "")).lower() == "jsonb":
+            rewritten[f"overflow_data.{key}"] = value
+        else:
+            rewritten[key] = value
+
+    return rewritten
+
+
+async def _load_schema_from_metadata(sql_session: AsyncSession, session_id: str) -> dict[str, Any]:
+    result = await sql_session.execute(
+        text("SELECT schema_json FROM session_metadata WHERE session_id = :sid"),
+        {"sid": session_id},
+    )
+    row = result.fetchone()
+    if not row:
+        return {}
+
+    raw_schema = row[0]
+    if isinstance(raw_schema, str):
+        try:
+            schema = json.loads(raw_schema)
+        except json.JSONDecodeError:
+            schema = {}
+    elif isinstance(raw_schema, dict):
+        schema = raw_schema
+    else:
+        schema = {}
+
+    if not isinstance(schema, dict):
+        return {}
+
+    return schema
+
+
 async def _hydrate_request_with_decomposition_plan(
     request: dict[str, Any],
     sql_session: AsyncSession,
 ) -> dict[str, Any]:
+    hydrated = dict(request)
+    session_id = _extract_session_id(request)
+
+    loaded_schema: dict[str, Any] | None = None
+
+    updates = request.get("updates")
+    should_rewrite_updates = isinstance(updates, dict)
+
     existing_plan = _extract_decomposition_plan(request)
     existing_entities = existing_plan.get("entities", [])
-    if isinstance(existing_entities, list) and existing_entities:
-        return request
+    needs_plan_hydration = not (isinstance(existing_entities, list) and existing_entities)
 
-    session_id = _extract_session_id(request)
+    if session_id and (should_rewrite_updates or needs_plan_hydration):
+        loaded_schema = await _load_schema_from_metadata(sql_session, session_id)
+
+    if should_rewrite_updates and loaded_schema is not None and isinstance(updates, dict):
+        hydrated["updates"] = _rewrite_updates_for_jsonb_targets(updates, loaded_schema)
+
+    if not needs_plan_hydration:
+        return hydrated
+
     if not session_id:
-        return request
+        return hydrated
 
-    metadata_plan = await _load_decomposition_plan_from_metadata(sql_session, session_id)
+    if loaded_schema is None:
+        loaded_schema = await _load_schema_from_metadata(sql_session, session_id)
+
+    metadata_plan = _extract_decomposition_plan_from_schema(loaded_schema)
     entities = metadata_plan.get("entities", [])
     if not isinstance(entities, list) or not entities:
-        return request
+        return hydrated
 
-    hydrated = dict(request)
     hydrated["decomposition_plan"] = metadata_plan
     return hydrated
 
