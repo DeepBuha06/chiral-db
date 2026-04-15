@@ -114,6 +114,9 @@ if __name__ == "__main__":
     if cmd == "stop":
         kill_process_on_port(8000)
         kill_process_on_port(8001)
+    elif cmd == "wait-db":
+        if not wait_for_db():
+            sys.exit(1)
     elif cmd == "cleanup":
         cleanup()
     elif cmd == "demo-start":

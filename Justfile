@@ -14,7 +14,15 @@ test-acid:
 
 # Run the hybrid database performance benchmark
 benchmark SESSION_ID SIZE='25' WORKLOAD='all':
-    uv run python scripts/performance_benchmark.py --session-id {{SESSION_ID}} --size {{SIZE}} --workload {{WORKLOAD}}
+    docker compose up -d postgres
+    PYTHONPATH=src uv run python scripts/manage.py wait-db
+    PYTHONPATH=src uv run python scripts/performance_benchmark.py --session-id {{SESSION_ID}} --size {{SIZE}} --workload {{WORKLOAD}}
+
+# Run the logical vs direct comparison benchmark
+benchmark-compare SESSION_ID SIZES='25,50,100,200' TRIALS='5' OUTPUT_DIR='benchmark-results' PROFILE='full':
+    docker compose up -d postgres
+    PYTHONPATH=src uv run python scripts/manage.py wait-db
+    PYTHONPATH=src uv run python scripts/performance_comparison.py --session-id {{SESSION_ID}} --sizes {{SIZES}} --trials {{TRIALS}} --profile {{PROFILE}} --output-dir {{OUTPUT_DIR}}
 
 # Format code
 format:
