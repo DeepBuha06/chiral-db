@@ -1,0 +1,449 @@
+[
+  {
+    "child_rows": 0,
+    "jsonb_rows": 1,
+    "latency_seconds": 0.4418679999998858,
+    "metadata_lookups": 0,
+    "operation": "ingestion",
+    "phase": "flat",
+    "record": {
+      "humidity": 40,
+      "session_id": "a4",
+      "t_stamp": 0.0,
+      "temperature": 20,
+      "username": "user_0"
+    },
+    "request": {},
+    "result": {},
+    "rows_inserted": 1,
+    "rows_processed": 1,
+    "sample_index": 0,
+    "sql_rows": 0,
+    "workload": "flat"
+  },
+  {
+    "child_rows": 0,
+    "jsonb_rows": 0,
+    "latency_seconds": 0.003241499998694053,
+    "metadata_lookups": 1,
+    "operation": "metadata_lookup",
+    "phase": "hydration",
+    "record": {},
+    "request": {
+      "decomposition_plan": {
+        "entities": [
+          {
+            "child_column_types": {
+              "comment_id": "int",
+              "score": "float",
+              "text": "str"
+            },
+            "child_columns": [
+              "comment_id",
+              "text",
+              "score"
+            ],
+            "child_table": "chiral_data_comments",
+            "relationship": "one_to_many",
+            "source_field": "comments"
+          }
+        ],
+        "parent_table": "chiral_data",
+        "version": 1
+      },
+      "operation": "create",
+      "payload": {
+        "comments": [
+          {
+            "comment_id": 1,
+            "score": 0.5,
+            "text": "hello"
+          },
+          {
+            "comment_id": 2,
+            "score": 0.8,
+            "text": "world"
+          }
+        ],
+        "session_id": "a4",
+        "sys_ingested_at": 1742643301.25,
+        "t_stamp": 1742643301.25,
+        "username": "benchmark_creator"
+      },
+      "session_id": "a4",
+      "table": "chiral_data"
+    },
+    "result": {},
+    "rows_inserted": 0,
+    "rows_processed": 1,
+    "sample_index": 0,
+    "sql_rows": 0,
+    "workload": "metadata_lookup"
+  },
+  {
+    "child_rows": 0,
+    "jsonb_rows": 0,
+    "latency_seconds": 0.3453921000000264,
+    "metadata_lookups": 0,
+    "operation": "create",
+    "phase": "logical_execution",
+    "record": {},
+    "request": {
+      "decomposition_plan": {
+        "entities": [
+          {
+            "child_column_types": {
+              "comment_id": "int",
+              "score": "float",
+              "text": "str"
+            },
+            "child_columns": [
+              "comment_id",
+              "text",
+              "score"
+            ],
+            "child_table": "chiral_data_comments",
+            "relationship": "one_to_many",
+            "source_field": "comments"
+          }
+        ],
+        "parent_table": "chiral_data",
+        "version": 1
+      },
+      "operation": "create",
+      "payload": {
+        "comments": [
+          {
+            "comment_id": 1,
+            "score": 0.5,
+            "text": "hello"
+          },
+          {
+            "comment_id": 2,
+            "score": 0.8,
+            "text": "world"
+          }
+        ],
+        "session_id": "a4",
+        "sys_ingested_at": 1742643301.25,
+        "t_stamp": 1742643301.25,
+        "username": "benchmark_creator"
+      },
+      "session_id": "a4",
+      "table": "chiral_data"
+    },
+    "result": {
+      "affected_rows": 1,
+      "child_insert_counts": {
+        "comments": 2
+      },
+      "mode": "migrated_sync",
+      "params": {},
+      "parent_id": 1004,
+      "sql": null
+    },
+    "rows_inserted": 0,
+    "rows_processed": 1,
+    "sample_index": 0,
+    "sql_rows": 0,
+    "workload": "query"
+  },
+  {
+    "child_rows": 0,
+    "jsonb_rows": 0,
+    "latency_seconds": 0.12339289999908942,
+    "metadata_lookups": 0,
+    "operation": "read",
+    "phase": "logical_execution",
+    "record": {},
+    "request": {
+      "filters": [
+        {
+          "field": "session_id",
+          "op": "eq",
+          "value": "a4"
+        }
+      ],
+      "limit": 10,
+      "operation": "read",
+      "select": [
+        "username",
+        "sys_ingested_at"
+      ],
+      "session_id": "a4",
+      "table": "chiral_data"
+    },
+    "result": {
+      "params": {
+        "limit": 10,
+        "p_0": "a4"
+      },
+      "row_count": 1,
+      "rows": [
+        {
+          "sys_ingested_at": 1742643301.25,
+          "username": "benchmark_creator"
+        }
+      ],
+      "sql": "SELECT \"username\", \"sys_ingested_at\" FROM \"chiral_data\" WHERE \"session_id\" = :p_0 LIMIT :limit"
+    },
+    "rows_inserted": 0,
+    "rows_processed": 1,
+    "sample_index": 1,
+    "sql_rows": 0,
+    "workload": "query"
+  },
+  {
+    "child_rows": 0,
+    "jsonb_rows": 0,
+    "latency_seconds": 0.08848580000085349,
+    "metadata_lookups": 0,
+    "operation": "update",
+    "phase": "logical_execution",
+    "record": {},
+    "request": {
+      "filters": [
+        {
+          "field": "session_id",
+          "op": "eq",
+          "value": "a4"
+        }
+      ],
+      "operation": "update",
+      "session_id": "a4",
+      "table": "chiral_data",
+      "updates": {
+        "username": "benchmark_user"
+      }
+    },
+    "result": {
+      "affected_rows": 1,
+      "params": {
+        "p_0": "a4",
+        "set_username": "benchmark_user"
+      },
+      "sql": "UPDATE \"chiral_data\" SET \"username\" = :set_username WHERE \"session_id\" = :p_0"
+    },
+    "rows_inserted": 0,
+    "rows_processed": 1,
+    "sample_index": 2,
+    "sql_rows": 0,
+    "workload": "query"
+  },
+  {
+    "child_rows": 0,
+    "jsonb_rows": 0,
+    "latency_seconds": 0.07834139999977197,
+    "metadata_lookups": 0,
+    "operation": "delete",
+    "phase": "logical_execution",
+    "record": {},
+    "request": {
+      "filters": [
+        {
+          "field": "session_id",
+          "op": "eq",
+          "value": "a4"
+        }
+      ],
+      "operation": "delete",
+      "session_id": "a4",
+      "table": "chiral_data"
+    },
+    "result": {
+      "affected_rows": 1,
+      "params": {
+        "p_0": "a4"
+      },
+      "sql": "DELETE FROM \"chiral_data\" WHERE \"session_id\" = :p_0"
+    },
+    "rows_inserted": 0,
+    "rows_processed": 1,
+    "sample_index": 3,
+    "sql_rows": 0,
+    "workload": "query"
+  },
+  {
+    "child_rows": 2,
+    "jsonb_rows": 0,
+    "latency_seconds": 0.18332940000072995,
+    "metadata_lookups": 1,
+    "operation": "create",
+    "phase": "coordination",
+    "record": {},
+    "request": {
+      "decomposition_plan": {
+        "entities": [
+          {
+            "child_column_types": {
+              "comment_id": "int",
+              "score": "float",
+              "text": "str"
+            },
+            "child_columns": [
+              "comment_id",
+              "text",
+              "score"
+            ],
+            "child_table": "chiral_data_comments",
+            "relationship": "one_to_many",
+            "source_field": "comments"
+          }
+        ],
+        "parent_table": "chiral_data",
+        "version": 1
+      },
+      "operation": "create",
+      "payload": {
+        "comments": [
+          {
+            "comment_id": 1,
+            "score": 0.5,
+            "text": "hello"
+          },
+          {
+            "comment_id": 2,
+            "score": 0.8,
+            "text": "world"
+          }
+        ],
+        "session_id": "a4",
+        "sys_ingested_at": 1742643301.25,
+        "t_stamp": 1742643301.25,
+        "username": "benchmark_creator"
+      },
+      "session_id": "a4",
+      "table": "chiral_data"
+    },
+    "result": {
+      "affected_rows": 1,
+      "child_insert_counts": {
+        "comments": 2
+      },
+      "mode": "migrated_sync",
+      "params": {},
+      "parent_id": 1005,
+      "sql": null
+    },
+    "rows_inserted": 3,
+    "rows_processed": 1,
+    "sample_index": 0,
+    "sql_rows": 1,
+    "workload": "coordination"
+  },
+  {
+    "child_rows": 0,
+    "jsonb_rows": 0,
+    "latency_seconds": 0.08125739999923098,
+    "metadata_lookups": 1,
+    "operation": "read",
+    "phase": "coordination",
+    "record": {},
+    "request": {
+      "filters": [
+        {
+          "field": "session_id",
+          "op": "eq",
+          "value": "a4"
+        }
+      ],
+      "limit": 10,
+      "operation": "read",
+      "select": [
+        "username",
+        "sys_ingested_at"
+      ],
+      "session_id": "a4",
+      "table": "chiral_data"
+    },
+    "result": {
+      "params": {
+        "limit": 10,
+        "p_0": "a4"
+      },
+      "row_count": 1,
+      "rows": [
+        {
+          "sys_ingested_at": 1742643301.25,
+          "username": "benchmark_creator"
+        }
+      ],
+      "sql": "SELECT \"username\", \"sys_ingested_at\" FROM \"chiral_data\" WHERE \"session_id\" = :p_0 LIMIT :limit"
+    },
+    "rows_inserted": 0,
+    "rows_processed": 1,
+    "sample_index": 1,
+    "sql_rows": 0,
+    "workload": "coordination"
+  },
+  {
+    "child_rows": 0,
+    "jsonb_rows": 0,
+    "latency_seconds": 0.09431260000019392,
+    "metadata_lookups": 1,
+    "operation": "update",
+    "phase": "coordination",
+    "record": {},
+    "request": {
+      "filters": [
+        {
+          "field": "session_id",
+          "op": "eq",
+          "value": "a4"
+        }
+      ],
+      "operation": "update",
+      "session_id": "a4",
+      "table": "chiral_data",
+      "updates": {
+        "username": "benchmark_user"
+      }
+    },
+    "result": {
+      "affected_rows": 1,
+      "params": {
+        "p_0": "a4",
+        "set_username": "benchmark_user"
+      },
+      "sql": "UPDATE \"chiral_data\" SET \"username\" = :set_username WHERE \"session_id\" = :p_0"
+    },
+    "rows_inserted": 1,
+    "rows_processed": 1,
+    "sample_index": 2,
+    "sql_rows": 0,
+    "workload": "coordination"
+  },
+  {
+    "child_rows": 0,
+    "jsonb_rows": 0,
+    "latency_seconds": 0.10423670000091079,
+    "metadata_lookups": 1,
+    "operation": "delete",
+    "phase": "coordination",
+    "record": {},
+    "request": {
+      "filters": [
+        {
+          "field": "session_id",
+          "op": "eq",
+          "value": "a4"
+        }
+      ],
+      "operation": "delete",
+      "session_id": "a4",
+      "table": "chiral_data"
+    },
+    "result": {
+      "affected_rows": 1,
+      "params": {
+        "p_0": "a4"
+      },
+      "sql": "DELETE FROM \"chiral_data\" WHERE \"session_id\" = :p_0"
+    },
+    "rows_inserted": 1,
+    "rows_processed": 1,
+    "sample_index": 3,
+    "sql_rows": 0,
+    "workload": "coordination"
+  }
+]

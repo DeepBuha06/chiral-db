@@ -40,6 +40,7 @@ def test_just_argument_normalizer_strips_named_assignments() -> None:
     assert _normalize_just_argument("SESSION_ID=session_assignment_2") == "session_assignment_2"
     assert _normalize_just_argument("SIZE=25") == "25"
     assert _normalize_just_argument("WORKLOAD=all") == "all"
+    assert _normalize_just_argument("OUTPUT_DIR=benchmark-results") == "benchmark-results"
     assert _normalize_just_argument("plain-value") == "plain-value"
 
 

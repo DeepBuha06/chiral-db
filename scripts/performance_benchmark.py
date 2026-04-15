@@ -41,6 +41,50 @@ class BenchmarkWorkload:
     items: list[dict[str, Any]]
 
 
+def _build_record_sample(
+    *,
+    sample_index: int,
+    timing: OperationTiming,
+    request: dict[str, Any] | None = None,
+    record: dict[str, Any] | None = None,
+    result: dict[str, Any] | None = None,
+    workload: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "sample_index": sample_index,
+        "operation": timing.operation,
+        "phase": timing.phase,
+        "workload": workload or timing.phase,
+        "latency_seconds": timing.latency_seconds,
+        "rows_processed": timing.rows_processed,
+        "rows_inserted": timing.rows_inserted,
+        "sql_rows": timing.sql_rows,
+        "jsonb_rows": timing.jsonb_rows,
+        "child_rows": timing.child_rows,
+        "metadata_lookups": timing.metadata_lookups,
+        "request": request or {},
+        "record": record or {},
+        "result": result or {},
+    }
+
+
+def _write_record_artifacts(output_dir: Path, records: list[dict[str, Any]], *, session_id: str) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    records_json_path = output_dir / f"benchmark_records_{session_id}.json"
+    records_csv_path = output_dir / f"benchmark_records_{session_id}.csv"
+
+    records_json_path.write_text(json.dumps(records, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    # Ensure old CSV artifacts from earlier versions do not linger.
+    if records_csv_path.exists():
+        records_csv_path.unlink()
+
+
+def _write_summary_artifact(output_dir: Path, summary: dict[str, Any], *, session_id: str) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = output_dir / f"benchmark_summary_{session_id}.json"
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True, default=str), encoding="utf-8")
+
+
 def build_flat_record(index: int, *, session_id: str) -> dict[str, Any]:
     return {
         "session_id": session_id,
@@ -136,9 +180,14 @@ async def _measure_async_operation(
     return timing, result
 
 
-async def benchmark_ingestion(session_id: str, workload: BenchmarkWorkload) -> dict[str, Any]:
+async def benchmark_ingestion(
+    session_id: str,
+    workload: BenchmarkWorkload,
+    *,
+    record_samples: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     timings: list[OperationTiming] = []
-    for record in workload.items:
+    for index, record in enumerate(workload.items):
         timing, _ = await _measure_async_operation(
             operation="ingestion",
             phase=workload.name,
@@ -149,12 +198,25 @@ async def benchmark_ingestion(session_id: str, workload: BenchmarkWorkload) -> d
             jsonb_rows=1,
         )
         timings.append(timing)
+        if record_samples is not None:
+            record_samples.append(
+                _build_record_sample(
+                    sample_index=index,
+                    timing=timing,
+                    record=record,
+                    workload=workload.name,
+                )
+            )
     return summarize_timings(timings, operation="ingestion", phase=workload.name).as_dict()
 
 
-async def benchmark_query_execution(requests: list[dict[str, Any]]) -> dict[str, Any]:
+async def benchmark_query_execution(
+    requests: list[dict[str, Any]],
+    *,
+    record_samples: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     timings: list[OperationTiming] = []
-    for request in requests:
+    for index, request in enumerate(requests):
         operation_name = str(request.get("operation", "read"))
         timing, result = await _measure_async_operation(
             operation=operation_name,
@@ -169,10 +231,24 @@ async def benchmark_query_execution(requests: list[dict[str, Any]]) -> dict[str,
             rows_processed=rows_processed,
         )
         timings.append(timing)
+        if record_samples is not None:
+            record_samples.append(
+                _build_record_sample(
+                    sample_index=index,
+                    timing=timing,
+                    request=request,
+                    result=result if isinstance(result, dict) else {"value": result},
+                    workload="query",
+                )
+            )
     return summarize_timings(timings, operation="logical_execution", phase="query").as_dict()
 
 
-async def benchmark_metadata_lookup(request: dict[str, Any]) -> dict[str, Any]:
+async def benchmark_metadata_lookup(
+    request: dict[str, Any],
+    *,
+    record_samples: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     session_id = str(request.get("session_id", ""))
     timings: list[OperationTiming] = []
 
@@ -185,13 +261,26 @@ async def benchmark_metadata_lookup(request: dict[str, Any]) -> dict[str, Any]:
             metadata_lookups=1,
         )
         timings.append(timing)
+        if record_samples is not None:
+            record_samples.append(
+                _build_record_sample(
+                    sample_index=0,
+                    timing=timing,
+                    request=request,
+                    workload="metadata_lookup",
+                )
+            )
 
     return summarize_timings(timings, operation="metadata_lookup", phase="hydration").as_dict()
 
 
-async def benchmark_transaction_coordination(requests: list[dict[str, Any]]) -> dict[str, Any]:
+async def benchmark_transaction_coordination(
+    requests: list[dict[str, Any]],
+    *,
+    record_samples: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     timings: list[OperationTiming] = []
-    for request in requests:
+    for index, request in enumerate(requests):
         operation_name = str(request.get("operation", "create"))
         timing, result = await _measure_async_operation(
             operation=operation_name,
@@ -228,6 +317,16 @@ async def benchmark_transaction_coordination(requests: list[dict[str, Any]]) -> 
             metadata_lookups=1,
         )
         timings.append(timing)
+        if record_samples is not None:
+            record_samples.append(
+                _build_record_sample(
+                    sample_index=index,
+                    timing=timing,
+                    request=request,
+                    result=result if isinstance(result, dict) else {"value": result},
+                    workload="coordination",
+                )
+            )
     return summarize_timings(timings, operation="coordination", phase="logical_write").as_dict()
 
 
@@ -295,6 +394,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Workload shape to benchmark.",
     )
     parser.add_argument("--size", type=int, default=25, help="Number of records per workload.")
+    parser.add_argument(
+        "--output-dir",
+        default="benchmark-results",
+        help="Directory where summary and per-record benchmark artifacts are written.",
+    )
     return parser
 
 
@@ -305,7 +409,7 @@ def _normalize_just_argument(value: str) -> str:
     when the recipe invocation uses named arguments. This helper makes the
     benchmark runner tolerant of that shape while still accepting plain values.
     """
-    for prefix in ("SESSION_ID=", "SIZE=", "WORKLOAD="):
+    for prefix in ("SESSION_ID=", "SIZE=", "WORKLOAD=", "OUTPUT_DIR="):
         if value.startswith(prefix):
             return value[len(prefix) :]
     return value
@@ -314,15 +418,24 @@ def _normalize_just_argument(value: str) -> str:
 async def _run_async(args: argparse.Namespace) -> dict[str, Any]:
     workload_names = [args.workload] if args.workload != "all" else ["flat", "nested", "mixed", "drift"]
     results: dict[str, Any] = {}
+    record_samples: list[dict[str, Any]] = []
 
     for workload_name in workload_names:
         workload = build_workload(workload_name, session_id=args.session_id, size=args.size)
-        results[f"ingestion_{workload_name}"] = await benchmark_ingestion(args.session_id, workload)
+        results[f"ingestion_{workload_name}"] = await benchmark_ingestion(
+            args.session_id,
+            workload,
+            record_samples=record_samples,
+        )
 
     requests = build_default_requests(args.session_id)
-    results["metadata_lookup"] = await benchmark_metadata_lookup(requests[0])
-    results["logical_execution"] = await benchmark_query_execution(requests)
-    results["coordination"] = await benchmark_transaction_coordination(requests)
+    results["metadata_lookup"] = await benchmark_metadata_lookup(requests[0], record_samples=record_samples)
+    results["logical_execution"] = await benchmark_query_execution(requests, record_samples=record_samples)
+    results["coordination"] = await benchmark_transaction_coordination(requests, record_samples=record_samples)
+
+    output_dir = Path(args.output_dir)
+    _write_summary_artifact(output_dir, results, session_id=args.session_id)
+    _write_record_artifacts(output_dir, record_samples, session_id=args.session_id)
     return results
 
 

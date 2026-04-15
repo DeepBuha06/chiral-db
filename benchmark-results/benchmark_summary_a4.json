@@ -1,0 +1,86 @@
+{
+  "coordination": {
+    "average_latency_seconds": 0.11578402500026641,
+    "backend_distribution": {
+      "child_fraction": 0.6666666666666666,
+      "child_rows": 2,
+      "jsonb_fraction": 0.0,
+      "jsonb_rows": 0,
+      "sql_fraction": 0.3333333333333333,
+      "sql_rows": 1,
+      "total_rows": 3
+    },
+    "metadata_lookups": 4,
+    "operation": "coordination",
+    "p50_latency_seconds": 0.09927465000055236,
+    "p95_latency_seconds": 0.17146549500075703,
+    "phase": "logical_write",
+    "rows_inserted": 5,
+    "rows_processed": 4,
+    "runs": 4,
+    "throughput_ops_per_second": 8.636770055261934
+  },
+  "ingestion_flat": {
+    "average_latency_seconds": 0.4418679999998858,
+    "backend_distribution": {
+      "child_fraction": 0.0,
+      "child_rows": 0,
+      "jsonb_fraction": 1.0,
+      "jsonb_rows": 1,
+      "sql_fraction": 0.0,
+      "sql_rows": 0,
+      "total_rows": 1
+    },
+    "metadata_lookups": 0,
+    "operation": "ingestion",
+    "p50_latency_seconds": 0.4418679999998858,
+    "p95_latency_seconds": 0.4418679999998858,
+    "phase": "flat",
+    "rows_inserted": 1,
+    "rows_processed": 1,
+    "runs": 1,
+    "throughput_ops_per_second": 2.2631193025977407
+  },
+  "logical_execution": {
+    "average_latency_seconds": 0.15890304999993532,
+    "backend_distribution": {
+      "child_fraction": 0.0,
+      "child_rows": 0,
+      "jsonb_fraction": 0.0,
+      "jsonb_rows": 0,
+      "sql_fraction": 0.0,
+      "sql_rows": 0,
+      "total_rows": 0
+    },
+    "metadata_lookups": 0,
+    "operation": "logical_execution",
+    "p50_latency_seconds": 0.10593934999997145,
+    "p95_latency_seconds": 0.3120922199998858,
+    "phase": "query",
+    "rows_inserted": 0,
+    "rows_processed": 4,
+    "runs": 4,
+    "throughput_ops_per_second": 6.293145411623043
+  },
+  "metadata_lookup": {
+    "average_latency_seconds": 0.003241499998694053,
+    "backend_distribution": {
+      "child_fraction": 0.0,
+      "child_rows": 0,
+      "jsonb_fraction": 0.0,
+      "jsonb_rows": 0,
+      "sql_fraction": 0.0,
+      "sql_rows": 0,
+      "total_rows": 0
+    },
+    "metadata_lookups": 1,
+    "operation": "metadata_lookup",
+    "p50_latency_seconds": 0.003241499998694053,
+    "p95_latency_seconds": 0.003241499998694053,
+    "phase": "hydration",
+    "rows_inserted": 0,
+    "rows_processed": 1,
+    "runs": 1,
+    "throughput_ops_per_second": 308.49915175162226
+  }
+}
