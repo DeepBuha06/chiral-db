@@ -580,10 +580,15 @@ async def _execute_create_request(
 
         await sql_session.execute(
             text(
-                "UPDATE session_metadata SET status = 'migrated' WHERE session_id = :sid "
-                "AND status IN ('collecting', 'analyzing', 'migrating_incremental')"
+                "UPDATE session_metadata "
+                "SET record_count = COALESCE(record_count, 0) + :record_increment, "
+                "    status = CASE "
+                "        WHEN status IN ('collecting', 'analyzing', 'migrating_incremental') THEN 'migrated' "
+                "        ELSE status "
+                "    END "
+                "WHERE session_id = :sid"
             ),
-            {"sid": session_id},
+            {"sid": session_id, "record_increment": 1},
         )
 
         raw_parent_id = create_result.get("parent_id")
@@ -636,10 +641,15 @@ async def _execute_create_request(
 
     await sql_session.execute(
         text(
-            "UPDATE session_metadata SET status = 'migrated' WHERE session_id = :sid "
-            "AND status IN ('collecting', 'analyzing', 'migrating_incremental')"
+            "UPDATE session_metadata "
+            "SET record_count = COALESCE(record_count, 0) + :record_increment, "
+            "    status = CASE "
+            "        WHEN status IN ('collecting', 'analyzing', 'migrating_incremental') THEN 'migrated' "
+            "        ELSE status "
+            "    END "
+            "WHERE session_id = :sid"
         ),
-        {"sid": session_id},
+        {"sid": session_id, "record_increment": max(1, affected_rows)},
     )
 
     return _build_create_execution_response(

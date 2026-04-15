@@ -7,18 +7,20 @@ interface SearchableDropdownProps {
     placeholder?: string;
     allowFreeText?: boolean;
     multiple?: boolean;
+    optionDetails?: Record<string, string[]>;
 }
 
 const SearchableDropdown: FC<SearchableDropdownProps> = ({
-    options =[], value, onChange, placeholder = 'Search...', allowFreeText = false, multiple = false
+    options =[], value, onChange, placeholder = 'Search...', allowFreeText = false, multiple = false, optionDetails = {}
 }) => {
     const [open, setOpen] = useState(false);
     const[search, setSearch] = useState('');
+    const [hoveredOption, setHoveredOption] = useState<string | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const selectedItems = multiple && Array.isArray(value) ? value :[];
-    
+
     const filtered = options.filter(opt => {
         if (multiple) {
             if (selectedItems.includes(opt)) return false;
@@ -49,6 +51,7 @@ const SearchableDropdown: FC<SearchableDropdownProps> = ({
         const handler = (e: globalThis.MouseEvent) => {
             if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
                 setOpen(false);
+                setHoveredOption(null);
             }
         };
         document.addEventListener('mousedown', handler);
@@ -77,12 +80,64 @@ const SearchableDropdown: FC<SearchableDropdownProps> = ({
                 />
             </div>
             {open && filtered.length > 0 && (
-                <div className="sd-dropdown" style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--bg-surface)', border: '1px solid var(--border)', zIndex: 100, maxHeight: '200px', overflowY: 'auto', borderRadius: '6px', marginTop: '4px', boxShadow: 'var(--shadow-lg)' }}>
-                    {filtered.map(opt => (
-                        <div key={opt} className="sd-option" style={{ padding: '6px 10px', fontSize: '12px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }} onMouseDown={(e) => { e.preventDefault(); handleSelect(opt); }}>
-                            {opt}
+                <div
+                    style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', zIndex: 200, display: 'flex', alignItems: 'flex-start', gap: '8px' }}
+                    onMouseLeave={() => setHoveredOption(null)}
+                >
+                    <div className="sd-dropdown" style={{ position: 'static', background: 'var(--bg-surface)', border: '1px solid var(--border)', maxHeight: '200px', overflowY: 'auto', borderRadius: '6px', boxShadow: 'var(--shadow-lg)', minWidth: '220px', flex: '1 1 auto' }}>
+                        {filtered.map(opt => (
+                            <div
+                                key={opt}
+                                className="sd-option"
+                                style={{ padding: '6px 10px', fontSize: '12px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}
+                                onMouseDown={(e) => { e.preventDefault(); handleSelect(opt); }}
+                                onMouseEnter={() => setHoveredOption(opt)}
+                            >
+                                {opt}
+                            </div>
+                        ))}
+                    </div>
+
+                    {hoveredOption && optionDetails[hoveredOption] && optionDetails[hoveredOption].length > 0 && (
+                        <div
+                            style={{
+                                minWidth: '180px',
+                                background: 'var(--bg-surface)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '8px',
+                                boxShadow: 'var(--shadow-lg)',
+                                padding: '8px 10px',
+                            }}
+                        >
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                                {hoveredOption} attributes
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {optionDetails[hoveredOption].map((attr) => (
+                                    <button
+                                        key={`${hoveredOption}-${attr}`}
+                                        type="button"
+                                        onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            handleSelect(`${hoveredOption}.${attr}`);
+                                        }}
+                                        style={{
+                                            fontSize: '12px',
+                                            color: 'var(--text-primary)',
+                                            fontFamily: 'var(--font-mono)',
+                                            border: 'none',
+                                            background: 'transparent',
+                                            textAlign: 'left',
+                                            padding: 0,
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        {attr}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    ))}
+                    )}
                 </div>
             )}
         </div>

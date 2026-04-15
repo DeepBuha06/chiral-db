@@ -895,6 +895,82 @@ body,
   min-width: 50px;
 }
 
+.crud-entity-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 6px 10px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.crud-entity-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.crud-entity-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  max-height: 220px;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.crud-entity-empty {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.crud-entity-node {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  text-align: left;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  cursor: default;
+}
+
+.crud-entity-node-parent {
+  cursor: pointer;
+}
+
+.crud-entity-node-parent:hover,
+.crud-entity-node-leaf:hover {
+  background: var(--accent-muted);
+}
+
+.crud-entity-node-marker {
+  width: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.crud-entity-node-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Execute button */
 .crud-execute-btn,
 .crud-submit-btn {
