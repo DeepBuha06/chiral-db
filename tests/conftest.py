@@ -13,13 +13,13 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
+from chiral.client import ChiralClient
 from chiral.config import get_settings
 from chiral.db.schema import init_metadata_table
 
 PROJECT_SRC = Path(__file__).resolve().parent.parent / "src"
 if str(PROJECT_SRC) not in sys.path:
     sys.path.insert(0, str(PROJECT_SRC))
-
 
 @pytest_asyncio.fixture(scope="function")
 async def acid_engine() -> AsyncGenerator[AsyncEngine]:
@@ -36,17 +36,22 @@ async def acid_engine() -> AsyncGenerator[AsyncEngine]:
     finally:
         await engine.dispose()
 
+@pytest_asyncio.fixture(scope="function")
+async def acid_client(acid_engine: AsyncEngine) -> AsyncGenerator[ChiralClient]:
+    """Create a reusable ChiralClient for ACID tests."""
+    client = ChiralClient(str(acid_engine.url))
+    client.engine = acid_engine
+    client.session_factory = async_sessionmaker(bind=acid_engine, expire_on_commit=False)
+    yield client
 
 @pytest_asyncio.fixture(autouse=True)
 async def reset_acid_tables(acid_engine: AsyncEngine) -> AsyncGenerator[None]:
     """Reset the test tables before and after every ACID test."""
-
     async def _truncate() -> None:
         async with acid_engine.begin() as conn:
             await conn.execute(
                 text("TRUNCATE TABLE chiral_data, staging_data, session_metadata RESTART IDENTITY CASCADE")
             )
-
     await _truncate()
     try:
         yield

@@ -30,7 +30,6 @@ from chiral.db.observability import (
 )
 from chiral.db.performance import calculate_rows_per_second, chunked
 from chiral.db.schema import get_decomposition_plan, materialize_decomposition_tables
-from chiral.db.sessions import session
 from chiral.domain.key_policy import KeyPolicy, build_dynamic_child_key_spec, normalize_identifier
 from chiral.domain.routing import is_sql_target
 
@@ -780,7 +779,6 @@ async def migrate_column_to_jsonb(
     return updated_count
 
 
-@session
 async def migrate_data(
     session_id: str,
     analysis: dict[str, Any],
@@ -989,7 +987,6 @@ async def migrate_data(
         logger.info("migration_metrics=%s", json.dumps(metrics, sort_keys=True))
 
 
-@session
 async def migrate_incremental(
     session_id: str,
     sql_session: AsyncSession,

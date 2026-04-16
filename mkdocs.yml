@@ -1,0 +1,55 @@
+site_name: ChiralDB
+site_description: Autonomous, session-scoped database framework bridging SQL and JSONB.
+site_author: Devansh Lodha & Team
+repo_url: https://github.com/devansh-lodha/chiral-db
+
+theme:
+  name: material
+  logo: material/database
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation & Setup: getting_started/installation.md
+    - The Dashboard UI: getting_started/dashboard.md
+  - Developer Guide:
+    - Python Client API: guide/client_api.md
+    - JSON Query Language: guide/query_language.md
+  - Internals:
+    - Architecture: internals/architecture.md

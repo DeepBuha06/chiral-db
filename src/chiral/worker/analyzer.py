@@ -12,7 +12,6 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from chiral.db.sessions import session
 from chiral.domain.normalization import (
     NormalizationPolicy,
     # calculate_field_stability_ratio,
@@ -26,7 +25,6 @@ from chiral.domain.normalization import (
 ANALYSIS_METADATA_KEY = "__analysis_metadata__"
 
 
-@session
 async def analyze_staging(
     sql_session: AsyncSession,
 ) -> dict[str, Any]:

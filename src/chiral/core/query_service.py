@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from chiral.core.ingestion import ingest_data
-from chiral.core.orchestrator import trigger_worker
 from chiral.db.metadata_store import (
     apply_decomposition_plan_to_metadata,
     apply_drift_to_metadata,
@@ -29,7 +28,6 @@ from chiral.db.metadata_store import (
 )
 from chiral.db.query_builder import BuiltQuery, CrudQueryBuilder, InferredJoin
 from chiral.db.schema import init_metadata_table
-from chiral.db.sessions import session
 from chiral.domain.key_policy import build_dynamic_child_key_spec
 from chiral.domain.normalization import detect_repeating_entities
 from chiral.worker.migrator import migrate_single_create_payload
@@ -77,6 +75,7 @@ def _build_queued_async_response(
         "child_insert_counts": {},
         "queue_reason": queue_reason,
         "worker_triggered": bool(ingest_result.get("worker_triggered", False)),
+        "incremental": bool(ingest_result.get("incremental", False)),
         "staging_count": int(ingest_result.get("count", 0) or 0),
     }
     if fallback_trigger:
@@ -156,20 +155,10 @@ async def _enqueue_create_for_async_processing(
     payload: dict[str, Any],
     session_id: str,
     queue_reason: str,
+    sql_session: AsyncSession,
     fallback_trigger: str | None = None,
 ) -> dict[str, Any]:
-    ingest_result = await ingest_data(data=dict(payload), session_id=session_id)
-    if ingest_result.get("worker_triggered"):
-        incremental = bool(ingest_result.get("incremental", False))
-        task = asyncio.create_task(trigger_worker(session_id, incremental=incremental))
-
-        def _handle_task_result(task: asyncio.Task) -> None:
-            try:
-                task.result()
-            except Exception as e:
-                logger.exception("Background task failed", exc_info=e)
-
-        task.add_done_callback(_handle_task_result)
+    ingest_result = await ingest_data(data=dict(payload), session_id=session_id, sql_session=sql_session)
 
     logger.warning(
         "Create request queued for async processing: session_id=%s queue_reason=%s fallback_trigger=%s",
@@ -528,6 +517,7 @@ async def _execute_create_request(
                 payload=payload,
                 session_id=session_id,
                 queue_reason=fallback_reason,
+                sql_session=sql_session,
                 fallback_trigger="metadata_resolution",
             )
         raise
@@ -539,6 +529,7 @@ async def _execute_create_request(
             payload=payload,
             session_id=session_id,
             queue_reason=mode_reason,
+            sql_session=sql_session,
         )
     if _payload_contains_nested_data(payload):
         max_field_bytes = max(128, int(os.getenv("GUARDRAIL_MAX_FIELD_BYTES", "65536")))
@@ -574,6 +565,7 @@ async def _execute_create_request(
                     payload=payload,
                     session_id=session_id,
                     queue_reason=fallback_reason,
+                    sql_session=sql_session,
                     fallback_trigger="sync_migration",
                 )
             raise
@@ -634,6 +626,7 @@ async def _execute_create_request(
                 payload=payload,
                 session_id=session_id,
                 queue_reason=fallback_reason,
+                sql_session=sql_session,
                 fallback_trigger="flat_insert",
             )
         raise
@@ -941,19 +934,22 @@ def _build_inferred_joins_for_request(request: dict[str, Any], table_name: str) 
 
 
 def translate_json_request(request: dict[str, Any]) -> BuiltQuery:
-    """Translate a user JSON CRUD request into a parameterized SQL query.
-
-    Supported operation values: read, create, update, delete.
-    """
+    """Translate a user JSON CRUD request into a parameterized SQL query."""
     operation = str(request.get("operation", "")).lower()
     table_name = str(request.get("table", "chiral_data"))
     inferred_joins = _build_inferred_joins_for_request(request, table_name)
     builder = CrudQueryBuilder(table_name=table_name, inferred_joins=inferred_joins)
 
+    # SECURE MULTI-TENANCY: Auto-inject session_id into filters if provided in the root request
+    filters = request.get("filters", [])
+    session_id = request.get("session_id")
+    if session_id and not any(f.get("field") == "session_id" for f in filters):
+        filters.append({"field": "session_id", "op": "eq", "value": session_id})
+
     if operation == "read":
         return builder.build_select(
             select_fields=request.get("select", ["*"]),
-            filters=request.get("filters", []),
+            filters=filters,
             limit=request.get("limit"),
             offset=request.get("offset"),
         )
@@ -970,16 +966,15 @@ def translate_json_request(request: dict[str, Any]) -> BuiltQuery:
         if not isinstance(updates, dict):
             msg = "update operation requires object updates"
             raise ValueError(msg)
-        return builder.build_update(updates=updates, filters=request.get("filters", []))
+        return builder.build_update(updates=updates, filters=filters)
 
     if operation == "delete":
-        return builder.build_delete(filters=request.get("filters", []))
+        return builder.build_delete(filters=filters)
 
     msg = f"Unsupported operation: {operation}"
     raise ValueError(msg)
 
 
-@session
 async def translate_json_request_with_metadata(
     request: dict[str, Any],
     sql_session: AsyncSession,
@@ -989,7 +984,6 @@ async def translate_json_request_with_metadata(
     return translate_json_request(hydrated_request)
 
 
-@session
 async def execute_json_request(
     request: dict[str, Any],
     sql_session: AsyncSession,
@@ -1056,3 +1050,4 @@ async def _execute_json_request_impl(
         "params": built.params,
         "affected_rows": affected_rows,
     }
+

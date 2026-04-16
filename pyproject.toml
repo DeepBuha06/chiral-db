@@ -1,28 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "chiral-db"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.1"
+description = "A session-scoped self-adaptive database framework for logical object-oriented data management."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
+authors = [
+    {name = "Devansh Lodha", email = "devansh.lodha@iitgn.ac.in"},
+]
 dependencies = [
     "asyncpg>=0.31.0",
-    "faker>=40.4.0",
     "fastapi[standard]>=0.128.0",
     "greenlet>=3.3.1",
-    "httpx>=0.28.1",
-    "motor>=3.7.1",
     "matplotlib>=3.10.0",
-    "orjson>=3.11.6",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
-    "python-dotenv>=1.2.1",
     "sqlalchemy>=2.0.46",
-    "sse-starlette>=3.2.0",
     "uvicorn>=0.40.0",
 ]
 
+[project.scripts]
+chiral = "chiral.cli:main"
+
 [dependency-groups]
 dev = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.6",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
@@ -30,6 +36,9 @@ dev = [
     "ruff>=0.14.14",
     "ty>=0.0.14",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chiral"]
 
 [tool.ruff]
 line-length = 120
@@ -39,36 +48,16 @@ target-version = "py313"
 max-returns = 10
 
 [tool.ruff.lint]
-# Enable every single rule in the registry
 select = ["ALL"]
-# Ignore specific conflicts and annoyances
 ignore = [
-    "D203",    # one-blank-line-before-class (conflicts with D211)
-    "D213",    # multi-line-summary-second-line (conflicts with D212)
-    "COM812",  # Trailing comma (conflicts with formatter)
-    "ISC001",  # Implicit string concatenation (conflicts with formatter)
-    "S608",
-    "PLR2004",
-    "PLR0913",# too many arguments
-    "PLR0912",# too many branches
-    "PLR0915",# too many statements
-    "E501",   # line too long
-    "C901",   # complex functions
-    "BLE001", # broad exception
-    "T201",   # print statements
-    "BLE001", # broad exception
-    "FBT003", # boolean positional args
-    "D103",   # missing docstrings
-    "S603", "S607", "S310",   # subprocess security (ignore)
-    "ANN401",                 # Any typing
-    "FBT001",                 # boolean args
-    "S311",
-    "ERA001",
+    "D203", "D213", "COM812", "ISC001", "S608", "PLR2004", "PLR0913", 
+    "PLR0912", "PLR0915", "E501", "C901", "BLE001", "T201", "FBT003", 
+    "D103", "S603", "S607", "S310", "ANN401", "FBT001", "S311", "ERA001"
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "D", "SLF001", "EM101", "ARG001", "TRY003"]
-"demo2.py" = ["ALL"]
+"examples/programmatic_demo.py" = ["ALL"]
 "scripts/performance_comparison.py" = ["SLF001", "ARG001"]
 
 [tool.ruff.format]

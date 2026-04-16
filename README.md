@@ -1,96 +1,116 @@
-# Assignment 3: Logical Dashboard & Transactional Validation
+# ChiralDB
 
-**Course:** CS 432 – Databases (Semester II, 2025 - 2026)  
-**Instructor:** Dr. Yogesh K. Meena  
+**ChiralDB** is an autonomous, session-scoped database framework that transparently bridges the gap between Relational (SQL) and Document (JSONB) paradigms over a single PostgreSQL instance.
 
-**Team Members:**
-* Deep Buha (24110082) - `24110082@iitgn.ac.in`
-* Devansh Lodha (23110091) - `devansh.lodha@iitgn.ac.in`
-* Laxmidhar Panda (24110185) - `24110185@iitgn.ac.in`
-* Yuvraj Rathod (24110293) - `yuvraj.rathod@iitgn.ac.in`
-* Viraj Solanki (24110348) - `viraj.solanki@iitgn.ac.in`
+Instead of defining strict schemas or maintaining a separate MongoDB cluster for unstructured data, ChiralDB completely abstracts storage placement, schema evolution, and SQL JOINs away from the developer.
+
+📚 **[Read the Full Documentation](https://devansh-lodha.github.io/chiral-db/)**
 
 ---
 
-## 1. Overview
+## ⚡ Key Features
 
-This repository implements the final phase of the session-scoped, self-adaptive database framework. It introduces a purely logical React-based dashboard interface and a robust Transaction Coordination Layer. 
-
-The framework autonomously translates abstract JSON requests into complex PostgreSQL `LEFT JOIN` and `JSONB` operations. By fully unifying the relational and document-store models into a single PostgreSQL engine, the system eliminates the need for Two-Phase Commit (2PC) coordinators while strictly guaranteeing ACID properties across normalized child tables and schema-less documents.
-
----
-
-## 2. Steps to Execute the Code
-
-### Prerequisites
-* **Docker Engine** (Must be running)
-* **Just** (Command runner): `brew install just` / `apt install just` / `choco install just`
-* **uv** (Python package manager): `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-### Setup & Configuration
-Clone the repository and set up the environment variables:
-```bash
-cp .env.example .env
-```
-
-### Run the Data Population Pipeline
-Initialize the database, start the FastAPI engine, and stream 1,000 highly nested records through the simulation server to trigger autonomous schema inference and DDL materialization.
-```bash
-just demo2
-```
-
-### Run the Logical Dashboard
-Build and launch the React/Vite dashboard container. The dashboard strictly enforces logical boundaries, hiding all SQL tables and physical JSONB columns.
-```bash
-just webapp
-```
-Access the dashboard at: **http://localhost:5173**
-
-### Run the ACID Validation Suite
-Execute the automated testing suite validating Atomicity, Consistency, Isolation, and Durability across multi-table insertions and concurrent JSONB mutations.
-```bash
-just test-acid
-```
-
-### Teardown
-Terminate background processes and destroy database containers/volumes.
-```bash
-just stop
-just down
-```
+* **Zero Schema Definition:** Ingest raw JSON. ChiralDB uses Shannon Entropy to autonomously infer data types and split repeating arrays into highly normalized SQL tables.
+* **Hybrid Storage Engine:** Flat, stable scalars go to SQL columns. Drift-prone, heavily nested, or sparse data gracefully spills over into `JSONB` automatically.
+* **Logical Session Isolation:** Data is physically stored in the same tables, but logically separated by `session_id`.
+* **ACID Transactions:** No Two-Phase Commit (2PC) overhead. By utilizing PostgreSQL's JSONB alongside relational tables with `begin_nested()`, we achieve perfect Atomicity and Isolation across paradigms.
+* **Built-in Dashboard:** Ships with a React SPA to visualize your logical schemas and execute CRUD operations.
 
 ---
 
-## 3. Project Structure
+## 🛠️ Quick Start
 
-```text
-chiral-db/
-├── demo2.py                          # E2E pipeline trigger (Ingestion -> Analysis -> DDL)
-├── Justfile                          # Automation commands
-├── src/chiral/
-│   ├── main.py                       # FastAPI entry point & Logical Schema APIs
-│   ├── core/
-│   │   └── query_service.py          # AST Compiler, JSONB abstraction hooks, Logical Reconstruction
-│   ├── db/
-│   │   ├── query_builder.py          # jsonb_set compilation and parameterized JOIN generation
-│   │   └── schema.py                 # DDL Materialization for dynamic parent and child tables
-│   └── worker/
-│       └── migrator.py               # Data splitting and zero-casting SQL/JSONB inserts
-├── tests/
-│   └── test_acid_properties.py       # Automated ACID validation experiments
-└── webapp/dashboard/
-    ├── src/
-    │   ├── App.tsx                   # Main SPA shell
-    │   ├── CrudPanel.tsx             # Key-Value update builder and Logical CRUD executor
-    │   └── api.ts                    # Backend integration and session telemetry fetcher
-    └── Dockerfile                    # Containerization for the frontend
+### Installation
+```bash
+pip install chiral-db
+```
+
+### Start the Server & Dashboard
+ChiralDB ships with a built-in FastAPI server and React Dashboard. Just provide your PostgreSQL credentials in a `.env` file and run:
+```bash
+chiral serve --port 8000
+```
+Open `http://localhost:8000` in your browser to access the interactive Query Executor.
+
+### Programmatic Usage
+You can use ChiralDB natively in your Python `asyncio` applications. You don't write DDL. You don't write SQL. You just use data.
+
+```python
+import asyncio
+from chiral.client import ChiralClient
+
+async def main():
+    async with ChiralClient("postgresql+asyncpg://user:pass@localhost:5432/db") as db:
+        
+        # 1. Ingest arbitrary, schema-less data
+        await db.ingest(
+            session_id="experiment_01", 
+            data={
+                "username": "devansh", 
+                "sensors": [{"type": "temp", "val": 22}, {"type": "humid", "val": 40}]
+            }
+        )
+        
+        # 2. Query it logically. ChiralDB handles the SQL Joins and JSONB unpacking!
+        result = await db.query({
+            "operation": "read",
+            "session_id": "experiment_01",
+            "select": ["username", "sensors.val"],
+            "filters": [{"field": "sensors.val", "op": "gt", "value": 20}]
+        })
+        
+        print(result["rows"])
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ---
 
-## 4. Key Architectural Implementations
+## 📄 License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+```
 
-* **Strict UI Abstraction:** The React dashboard relies exclusively on the `/schema/logical/{session_id}` API. It autonomously scrubs physical schema markers. Physical tables (`chiral_data_comments`) and document-store identifiers (`overflow_data`) are completely invisible to the client.
-* **Logical Data Reconstruction:** Flat relational rows generated by dynamic `LEFT JOIN` queries cause a Cartesian explosion. The `query_service` intercepts raw SQLAlchemy outputs, hashes parent tuples, and safely merges duplicated rows into unified, object-oriented JSON arrays in-memory.
-* **Nested Transaction Atomicity:** For synchronous multi-table operations (e.g., inserting a document with nested arrays), the framework relies on `sql_session.begin_nested()`. If dynamic child-table insertions fail, the parent SQL record is entirely rolled back to prevent orphaned data.
-* **JSONB Isolation (No Lost Updates):** Concurrent logical updates targeting distinct fields within the same schema-less document are serialized safely. The engine compiles these as atomic `jsonb_set(COALESCE(...))` commands, utilizing engine-level row locks to eliminate read-modify-write race conditions.
+### Step 3: Update PyPI with the new README
+Because PyPI packages are immutable, you must bump the version number to push the new README to the website.
+1. Open `pyproject.toml` and change `version = "1.0.0"` to `version = "1.0.1"`.
+2. Rebuild and publish:
+   ```bash
+   uv build
+   uv publish
+   ```
+*(Go check your package on PyPI right after this—it will look incredible!)*
+
+### Step 4: Push to GitHub & Deploy the Website
+MkDocs has a magical built-in command that automatically compiles your documentation into HTML and pushes it to a special `gh-pages` branch on your GitHub repository. GitHub then hosts this branch for free!
+
+**1. Update `repo_url` in `mkdocs.yml`**
+Open `mkdocs.yml` and update the `repo_url` at the top to point to your actual GitHub repository:
+```yaml
+repo_url: https://github.com/your-username/chiral-db
+```
+
+**2. Commit and Push your code to GitHub:**
+```bash
+git add .
+git commit -m "feat: Finalize PyPI package, README, and MkDocs setup"
+git push origin main
+```
+
+**3. Deploy the Website:**
+Run this single command in your terminal:
+```bash
+uv run mkdocs gh-deploy --force
+```
+*(This command builds the site and pushes it to the `gh-pages` branch on GitHub).*
+
+**4. Turn on GitHub Pages:**
+1. Go to your repository on **GitHub.com**.
+2. Click on the **Settings** tab.
+3. Click on **Pages** in the left sidebar.
+4. Under "Build and deployment", set the **Source** to **Deploy from a branch**.
+5. Under "Branch", select **`gh-pages`** and click **Save**.
+
+Wait about 60 seconds, and your website will be live at `https://<your-username>.github.io/chiral-db/`! Make sure to update the placeholder link in your `README.md` to point to the real URL.
+
+Let me know when the site is live! You have officially completed the entire lifecycle of a production-grade software project!

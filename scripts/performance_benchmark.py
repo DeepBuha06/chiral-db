@@ -3,12 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Benchmark runner for the hybrid database framework.
-
-This module provides reusable workload builders and timing helpers for
-measuring ingestion latency, logical query latency, metadata lookup overhead,
-and transaction coordination overhead.
-"""
+"""Benchmark runner for the hybrid database framework."""
 
 from __future__ import annotations
 
@@ -19,13 +14,13 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from chiral.core.ingestion import ingest_data
-from chiral.core.query_service import execute_json_request, translate_json_request_with_metadata
+from chiral.client import ChiralClient
+from chiral.config import get_settings
 from chiral.db.performance import OperationTiming, summarize_timings
 
 PROJECT_SRC = Path(__file__).resolve().parent.parent / "src"
@@ -36,7 +31,6 @@ if str(PROJECT_SRC) not in sys.path:
 @dataclass(frozen=True)
 class BenchmarkWorkload:
     """Collection of records or requests used in a benchmark run."""
-
     name: str
     items: list[dict[str, Any]]
 
@@ -71,12 +65,7 @@ def _build_record_sample(
 def _write_record_artifacts(output_dir: Path, records: list[dict[str, Any]], *, session_id: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     records_json_path = output_dir / f"benchmark_records_{session_id}.json"
-    records_csv_path = output_dir / f"benchmark_records_{session_id}.csv"
-
     records_json_path.write_text(json.dumps(records, indent=2, sort_keys=True, default=str), encoding="utf-8")
-    # Ensure old CSV artifacts from earlier versions do not linger.
-    if records_csv_path.exists():
-        records_csv_path.unlink()
 
 
 def _write_summary_artifact(output_dir: Path, summary: dict[str, Any], *, session_id: str) -> None:
@@ -86,14 +75,7 @@ def _write_summary_artifact(output_dir: Path, summary: dict[str, Any], *, sessio
 
 
 def build_flat_record(index: int, *, session_id: str) -> dict[str, Any]:
-    return {
-        "session_id": session_id,
-        "username": f"user_{index}",
-        "temperature": 20 + (index % 10),
-        "humidity": 40 + (index % 15),
-        "t_stamp": float(index),
-    }
-
+    return {"session_id": session_id, "username": f"user_{index}", "temperature": 20, "humidity": 40 + (index % 15), "t_stamp": float(index)}
 
 def build_nested_record(index: int, *, session_id: str) -> dict[str, Any]:
     return {
@@ -112,43 +94,17 @@ def build_nested_record(index: int, *, session_id: str) -> dict[str, Any]:
 
 
 def build_mixed_record(index: int, *, session_id: str) -> dict[str, Any]:
-    return {
-        "session_id": session_id,
-        "username": f"mixed_user_{index}",
-        "temperature": 20 + (index % 10),
-        "profile": {"city": f"city_{index % 4}", "score": float(index) / 10},
-        "tags": ["a", "b", str(index)],
-        "t_stamp": float(index),
-    }
+    return {"session_id": session_id, "username": f"user_{index}", "profile": {"address": "123"}, "tags": ["a"], "t_stamp": float(index)}
 
 
 def build_drift_record(index: int, *, session_id: str) -> dict[str, Any]:
-    value: Any
-    value = index if index % 2 == 0 else f"drift_{index}"
-    return {
-        "session_id": session_id,
-        "username": f"drift_user_{index}",
-        "temperature": value,
-        "t_stamp": float(index),
-    }
+    value: Any = index if index % 2 == 0 else f"drift_{index}"
+    return {"session_id": session_id, "username": f"user_{index}", "temperature": value, "t_stamp": float(index)}
 
 
 def build_workload(name: str, *, session_id: str, size: int) -> BenchmarkWorkload:
-    builders = {
-        "flat": build_flat_record,
-        "nested": build_nested_record,
-        "mixed": build_mixed_record,
-        "drift": build_drift_record,
-    }
-    if name not in builders:
-        msg = f"Unsupported workload shape: {name}"
-        raise ValueError(msg)
-
-    builder = builders[name]
-    return BenchmarkWorkload(
-        name=name,
-        items=[builder(index, session_id=session_id) for index in range(size)],
-    )
+    builders = {"flat": build_flat_record, "nested": build_nested_record, "mixed": build_mixed_record, "drift": build_drift_record}
+    return BenchmarkWorkload(name=name, items=[builders[name](i, session_id=session_id) for i in range(size)])
 
 
 async def _measure_async_operation(
@@ -181,6 +137,7 @@ async def _measure_async_operation(
 
 
 async def benchmark_ingestion(
+    client: ChiralClient,
     session_id: str,
     workload: BenchmarkWorkload,
     *,
@@ -191,26 +148,18 @@ async def benchmark_ingestion(
         timing, _ = await _measure_async_operation(
             operation="ingestion",
             phase=workload.name,
-            func=lambda record=record: ingest_data(data=record, session_id=session_id),
+            func=lambda record=record: client.ingest(session_id=session_id, data=record),
             rows_processed=1,
             rows_inserted=1,
-            # Ingestion writes into staging_data JSONB.
             jsonb_rows=1,
         )
         timings.append(timing)
         if record_samples is not None:
-            record_samples.append(
-                _build_record_sample(
-                    sample_index=index,
-                    timing=timing,
-                    record=record,
-                    workload=workload.name,
-                )
-            )
+            record_samples.append(_build_record_sample(sample_index=index, timing=timing, record=record, workload=workload.name))
     return summarize_timings(timings, operation="ingestion", phase=workload.name).as_dict()
 
-
 async def benchmark_query_execution(
+    client: ChiralClient,
     requests: list[dict[str, Any]],
     *,
     record_samples: list[dict[str, Any]] | None = None,
@@ -221,60 +170,38 @@ async def benchmark_query_execution(
         timing, result = await _measure_async_operation(
             operation=operation_name,
             phase="logical_execution",
-            func=lambda request=request: execute_json_request(request),
+            func=lambda request=request: client.query(request),
         )
         rows_processed = int(result.get("row_count", result.get("affected_rows", 0)) or 0)
-        timing = OperationTiming(
-            operation=timing.operation,
-            phase=timing.phase,
-            latency_seconds=timing.latency_seconds,
-            rows_processed=rows_processed,
-        )
+        timing = OperationTiming(operation=timing.operation, phase=timing.phase, latency_seconds=timing.latency_seconds, rows_processed=rows_processed)
         timings.append(timing)
         if record_samples is not None:
-            record_samples.append(
-                _build_record_sample(
-                    sample_index=index,
-                    timing=timing,
-                    request=request,
-                    result=result if isinstance(result, dict) else {"value": result},
-                    workload="query",
-                )
-            )
+            record_samples.append(_build_record_sample(sample_index=index, timing=timing, request=request, result=result if isinstance(result, dict) else {"value": result}, workload="query"))
     return summarize_timings(timings, operation="logical_execution", phase="query").as_dict()
 
-
 async def benchmark_metadata_lookup(
+    client: ChiralClient,
     request: dict[str, Any],
     *,
     record_samples: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     session_id = str(request.get("session_id", ""))
     timings: list[OperationTiming] = []
-
     if session_id:
         timing, _ = await _measure_async_operation(
             operation="metadata_lookup",
             phase="hydration",
-            func=lambda: translate_json_request_with_metadata(request),
+            func=lambda: client.translate_only(request),
             rows_processed=1,
             metadata_lookups=1,
         )
         timings.append(timing)
         if record_samples is not None:
-            record_samples.append(
-                _build_record_sample(
-                    sample_index=0,
-                    timing=timing,
-                    request=request,
-                    workload="metadata_lookup",
-                )
-            )
-
+            record_samples.append(_build_record_sample(sample_index=0, timing=timing, request=request, workload="metadata_lookup"))
     return summarize_timings(timings, operation="metadata_lookup", phase="hydration").as_dict()
 
-
 async def benchmark_transaction_coordination(
+    client: ChiralClient,
     requests: list[dict[str, Any]],
     *,
     record_samples: list[dict[str, Any]] | None = None,
@@ -285,12 +212,10 @@ async def benchmark_transaction_coordination(
         timing, result = await _measure_async_operation(
             operation=operation_name,
             phase="coordination",
-            func=lambda request=request: execute_json_request(request),
+            func=lambda request=request: client.query(request),
         )
         affected_rows = int(result.get("affected_rows", 0) or 0)
-        child_rows = 0
-        sql_rows = 0
-        jsonb_rows = 0
+        child_rows, sql_rows, jsonb_rows = 0, 0, 0
         rows_inserted = affected_rows
 
         if operation_name == "create":
@@ -299,36 +224,15 @@ async def benchmark_transaction_coordination(
                 child_rows = sum(int(value or 0) for value in child_counts.values())
             sql_rows = affected_rows
             rows_inserted = affected_rows + child_rows
-
-            # When sync create falls back, data is queued into staging_data JSONB.
             if str(result.get("mode", "")) == "queued_async":
                 jsonb_rows = 1
                 rows_inserted = max(rows_inserted, 1)
 
-        timing = OperationTiming(
-            operation=timing.operation,
-            phase=timing.phase,
-            latency_seconds=timing.latency_seconds,
-            rows_processed=max(1, affected_rows or 1),
-            rows_inserted=rows_inserted,
-            sql_rows=sql_rows,
-            jsonb_rows=jsonb_rows,
-            child_rows=child_rows,
-            metadata_lookups=1,
-        )
+        timing = OperationTiming(operation=timing.operation, phase=timing.phase, latency_seconds=timing.latency_seconds, rows_processed=max(1, affected_rows or 1), rows_inserted=rows_inserted, sql_rows=sql_rows, jsonb_rows=jsonb_rows, child_rows=child_rows, metadata_lookups=1)
         timings.append(timing)
         if record_samples is not None:
-            record_samples.append(
-                _build_record_sample(
-                    sample_index=index,
-                    timing=timing,
-                    request=request,
-                    result=result if isinstance(result, dict) else {"value": result},
-                    workload="coordination",
-                )
-            )
+            record_samples.append(_build_record_sample(sample_index=index, timing=timing, request=request, result=result if isinstance(result, dict) else {"value": result}, workload="coordination"))
     return summarize_timings(timings, operation="coordination", phase="logical_write").as_dict()
-
 
 def build_default_requests(session_id: str) -> list[dict[str, Any]]:
     return [
@@ -341,74 +245,28 @@ def build_default_requests(session_id: str) -> list[dict[str, Any]]:
                 "username": "benchmark_creator",
                 "sys_ingested_at": 1742643301.25,
                 "t_stamp": 1742643301.25,
-                "comments": [
-                    {"comment_id": 1, "text": "hello", "score": 0.5},
-                    {"comment_id": 2, "text": "world", "score": 0.8},
-                ],
+                "comments": [{"comment_id": 1, "text": "hello", "score": 0.5}],
             },
             "decomposition_plan": {
                 "version": 1,
                 "parent_table": "chiral_data",
-                "entities": [
-                    {
-                        "source_field": "comments",
-                        "child_table": "chiral_data_comments",
-                        "relationship": "one_to_many",
-                        "child_columns": ["comment_id", "text", "score"],
-                        "child_column_types": {"comment_id": "int", "text": "str", "score": "float"},
-                    }
-                ],
+                "entities": [{"source_field": "comments", "child_table": "chiral_data_comments"}],
             },
         },
-        {
-            "operation": "read",
-            "table": "chiral_data",
-            "session_id": session_id,
-            "select": ["username", "sys_ingested_at"],
-            "filters": [{"field": "session_id", "op": "eq", "value": session_id}],
-            "limit": 10,
-        },
-        {
-            "operation": "update",
-            "table": "chiral_data",
-            "session_id": session_id,
-            "updates": {"username": "benchmark_user"},
-            "filters": [{"field": "session_id", "op": "eq", "value": session_id}],
-        },
-        {
-            "operation": "delete",
-            "table": "chiral_data",
-            "session_id": session_id,
-            "filters": [{"field": "session_id", "op": "eq", "value": session_id}],
-        },
+        {"operation": "read", "session_id": session_id, "select": ["username"], "filters": [{"field": "session_id", "op": "eq", "value": session_id}]},
+        {"operation": "update", "session_id": session_id, "updates": {"username": "u"}, "filters": [{"field": "session_id", "op": "eq", "value": session_id}]},
+        {"operation": "delete", "session_id": session_id, "filters": [{"field": "session_id", "op": "eq", "value": session_id}]},
     ]
 
-
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run hybrid database performance benchmarks.")
-    parser.add_argument("--session-id", required=True, help="Session identifier for the benchmark run.")
-    parser.add_argument(
-        "--workload",
-        choices=["flat", "nested", "mixed", "drift", "all"],
-        default="all",
-        help="Workload shape to benchmark.",
-    )
-    parser.add_argument("--size", type=int, default=25, help="Number of records per workload.")
-    parser.add_argument(
-        "--output-dir",
-        default="benchmark-results",
-        help="Directory where summary and per-record benchmark artifacts are written.",
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--session-id", required=True)
+    parser.add_argument("--workload", choices=["flat", "nested", "mixed", "drift", "all"], default="all")
+    parser.add_argument("--size", type=int, default=25)
+    parser.add_argument("--output-dir", default="benchmark-results")
     return parser
 
-
 def _normalize_just_argument(value: str) -> str:
-    """Strip Just-style NAME=value wrappers from argument values.
-
-    Just can forward recipe parameters as literal strings like ``SESSION_ID=abc``
-    when the recipe invocation uses named arguments. This helper makes the
-    benchmark runner tolerant of that shape while still accepting plain values.
-    """
     for prefix in ("SESSION_ID=", "SIZE=", "WORKLOAD=", "OUTPUT_DIR="):
         if value.startswith(prefix):
             return value[len(prefix) :]
@@ -416,28 +274,26 @@ def _normalize_just_argument(value: str) -> str:
 
 
 async def _run_async(args: argparse.Namespace) -> dict[str, Any]:
-    workload_names = [args.workload] if args.workload != "all" else ["flat", "nested", "mixed", "drift"]
-    results: dict[str, Any] = {}
-    record_samples: list[dict[str, Any]] = []
+    settings = get_settings()
+    
+    async with ChiralClient(settings.database_url) as client:
+        workload_names = [args.workload] if args.workload != "all" else ["flat", "nested", "mixed", "drift"]
+        results: dict[str, Any] = {}
+        record_samples: list[dict[str, Any]] = []
 
-    for workload_name in workload_names:
-        workload = build_workload(workload_name, session_id=args.session_id, size=args.size)
-        results[f"ingestion_{workload_name}"] = await benchmark_ingestion(
-            args.session_id,
-            workload,
-            record_samples=record_samples,
-        )
+        for workload_name in workload_names:
+            workload = build_workload(workload_name, session_id=args.session_id, size=args.size)
+            results[f"ingestion_{workload_name}"] = await benchmark_ingestion(client, args.session_id, workload, record_samples=record_samples)
 
-    requests = build_default_requests(args.session_id)
-    results["metadata_lookup"] = await benchmark_metadata_lookup(requests[0], record_samples=record_samples)
-    results["logical_execution"] = await benchmark_query_execution(requests, record_samples=record_samples)
-    results["coordination"] = await benchmark_transaction_coordination(requests, record_samples=record_samples)
+        requests = build_default_requests(args.session_id)
+        results["metadata_lookup"] = await benchmark_metadata_lookup(client, requests[0], record_samples=record_samples)
+        results["logical_execution"] = await benchmark_query_execution(client, requests, record_samples=record_samples)
+        results["coordination"] = await benchmark_transaction_coordination(client, requests, record_samples=record_samples)
 
-    output_dir = Path(args.output_dir)
-    _write_summary_artifact(output_dir, results, session_id=args.session_id)
-    _write_record_artifacts(output_dir, record_samples, session_id=args.session_id)
-    return results
-
+        output_dir = Path(args.output_dir)
+        _write_summary_artifact(output_dir, results, session_id=args.session_id)
+        _write_record_artifacts(output_dir, record_samples, session_id=args.session_id)
+        return results
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
@@ -445,9 +301,8 @@ def main(argv: list[str] | None = None) -> int:
     normalized_argv = [_normalize_just_argument(arg) for arg in raw_argv]
     args = parser.parse_args(normalized_argv)
     results = asyncio.run(_run_async(args))
-    print(json.dumps(results, indent=2, sort_keys=True, default=str))
+    print(json.dumps(results, indent=2, sort_keys=True, default=str)) # noqa: T201
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

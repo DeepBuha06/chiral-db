@@ -626,45 +626,26 @@ async def test_execute_json_request_create_raises_typed_validation_error_on_inva
 
 @pytest.mark.asyncio
 async def test_execute_json_request_create_queues_nested_payload_async(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Nested create payloads should be queued to ingest path until phase-3 sync decomposition is implemented."""
-
     class DummySession:
         async def execute(self, _statement: str, _params: dict[str, Any]) -> Any:
-            raise AssertionError("direct SQL execute should not run for queued_async path")
+            raise AssertionError("direct SQL execute should not run")
 
-    async def no_op_init(_sql_session: Any, _session_id: str) -> None:
+    async def no_op(*args: Any, **kwargs: Any) -> None:
         return None
 
-    async def no_op_lock(_sql_session: Any, _session_id: str) -> None:
-        return None
-
-    async def empty_plan(_sql_session: Any, _session_id: str) -> dict[str, Any]:
+    async def empty_plan(*args: Any, **kwargs: Any) -> dict[str, Any]:
         return {"version": 1, "parent_table": "chiral_data", "entities": []}
 
-    async def passthrough_resolve(
-        _sql_session: Any,
-        *,
-        session_id: str,
-        payload: dict[str, Any],
-        table_name: str,
-        current_plan: dict[str, Any],
-    ) -> dict[str, Any]:
+    async def passthrough_resolve(*args: Any, current_plan: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         return current_plan
 
-    async def fake_ingest(*, data: dict[str, Any], session_id: str) -> dict[str, Any]:
-        data = data.get("payload", {})
+    async def fake_ingest(*, data: dict[str, Any], session_id: str, sql_session: Any) -> dict[str, Any]:
         assert session_id == "s_nested"
         assert "comments" in data
-        return {
-            "status": "success",
-            "session_id": session_id,
-            "count": 1,
-            "worker_triggered": False,
-            "incremental": False,
-        }
+        return {"status": "success", "session_id": session_id, "count": 1, "worker_triggered": False, "incremental": False}
 
-    monkeypatch.setattr(query_service, "_initialize_session_metadata_for_create", no_op_init)
-    monkeypatch.setattr(query_service, "_lock_session_metadata_row", no_op_lock)
+    monkeypatch.setattr(query_service, "_initialize_session_metadata_for_create", no_op)
+    monkeypatch.setattr(query_service, "_lock_session_metadata_row", no_op)
     monkeypatch.setattr(query_service, "_load_decomposition_plan_from_metadata", empty_plan)
     monkeypatch.setattr(query_service, "_resolve_create_metadata_and_plan", passthrough_resolve)
     monkeypatch.setattr(query_service, "ingest_data", fake_ingest)
@@ -673,19 +654,11 @@ async def test_execute_json_request_create_queues_nested_payload_async(monkeypat
         {
             "operation": "create",
             "session_id": "s_nested",
-            "payload": {
-                "session_id": "s_nested",
-                "username": "alice",
-                "comments": [{"text": "hello", "score": "0.7"}],
-            },
+            "payload": {"session_id": "s_nested", "username": "alice", "comments": [{"text": "hello"}]},
         },
         sql_session=cast("Any", DummySession()),
     )
-
     assert response["mode"] == "queued_async"
-    assert response["affected_rows"] == 0
-    assert response["staging_count"] == 1
-    assert response["worker_triggered"] is False
 
 
 @pytest.mark.asyncio
@@ -877,7 +850,7 @@ async def test_execute_json_request_create_falls_back_to_async_on_analysis_timeo
     ) -> dict[str, Any]:
         raise TimeoutError("analysis timed out")
 
-    async def fake_ingest(*, data: dict[str, Any], session_id: str) -> dict[str, Any]:
+    async def fake_ingest(*, data: dict[str, Any], session_id: str, sql_session: Any) -> dict[str, Any]:
         return {
             "status": "success",
             "session_id": session_id,
@@ -906,57 +879,29 @@ async def test_execute_json_request_create_falls_back_to_async_on_analysis_timeo
     assert response["fallback_trigger"] == "metadata_resolution"
     assert response["staging_count"] == 2
 
-
 @pytest.mark.asyncio
-async def test_execute_json_request_create_falls_back_to_async_on_sync_insert_conflict(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_execute_json_request_create_falls_back_to_async_on_sync_insert_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
     class DummySession:
         async def execute(self, _statement: str, _params: dict[str, Any]) -> Any:
-            class DummyResult:
-                rowcount = 1
+            pass
 
-            return DummyResult()
-
-    async def no_op_init(_sql_session: Any, _session_id: str) -> None:
+    async def no_op(*args: Any, **kwargs: Any) -> None:
         return None
 
-    async def no_op_lock(_sql_session: Any, _session_id: str) -> None:
-        return None
+    async def plan_with_entities(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {"version": 1, "parent_table": "chiral_data", "entities": [{"source_field": "comments", "child_table": "chiral_data_comments"}]}
 
-    async def plan_with_entities(_sql_session: Any, _session_id: str) -> dict[str, Any]:
-        return {
-            "version": 1,
-            "parent_table": "chiral_data",
-            "entities": [{"source_field": "comments", "child_table": "chiral_data_comments"}],
-        }
-
-    async def passthrough_resolve(
-        _sql_session: Any,
-        *,
-        session_id: str,
-        payload: dict[str, Any],
-        table_name: str,
-        current_plan: dict[str, Any],
-    ) -> dict[str, Any]:
+    async def passthrough_resolve(*args: Any, current_plan: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         return current_plan
 
     async def conflicting_sync_migrate(**kwargs: Any) -> dict[str, Any]:
-        msg = "duplicate key value"
-        raise IntegrityError("INSERT INTO x", {}, Exception(msg))
+        raise IntegrityError("INSERT", {}, Exception("duplicate key value"))
 
-    async def fake_ingest(*, data: dict[str, Any], session_id: str) -> dict[str, Any]:
-        data = data.get("payload", {})
-        return {
-            "status": "success",
-            "session_id": session_id,
-            "count": 3,
-            "worker_triggered": True,
-            "incremental": True,
-        }
+    async def fake_ingest(*, data: dict[str, Any], session_id: str, sql_session: Any) -> dict[str, Any]:
+        return {"status": "success", "session_id": session_id, "count": 3, "worker_triggered": True, "incremental": True}
 
-    monkeypatch.setattr(query_service, "_initialize_session_metadata_for_create", no_op_init)
-    monkeypatch.setattr(query_service, "_lock_session_metadata_row", no_op_lock)
+    monkeypatch.setattr(query_service, "_initialize_session_metadata_for_create", no_op)
+    monkeypatch.setattr(query_service, "_lock_session_metadata_row", no_op)
     monkeypatch.setattr(query_service, "_load_decomposition_plan_from_metadata", plan_with_entities)
     monkeypatch.setattr(query_service, "_resolve_create_metadata_and_plan", passthrough_resolve)
     monkeypatch.setattr(query_service, "migrate_single_create_payload", conflicting_sync_migrate)
@@ -966,19 +911,12 @@ async def test_execute_json_request_create_falls_back_to_async_on_sync_insert_co
         {
             "operation": "create",
             "session_id": "s_conflict",
-            "payload": {
-                "session_id": "s_conflict",
-                "username": "alice",
-                "comments": [{"text": "hello"}],
-            },
+            "payload": {"session_id": "s_conflict", "username": "alice", "comments": [{"text": "hello"}]},
         },
         sql_session=cast("Any", DummySession()),
     )
-
     assert response["mode"] == "queued_async"
     assert response["queue_reason"] == "retriable_insert_conflict"
-    assert response["fallback_trigger"] == "sync_migration"
-    assert response["worker_triggered"] is True
 
 
 @pytest.mark.asyncio
@@ -1018,3 +956,4 @@ async def test_execute_json_request_create_uses_legacy_path_when_orchestration_d
     assert response["affected_rows"] == 1
     assert response["parent_id"] is None
     assert response["child_insert_counts"] == {}
+

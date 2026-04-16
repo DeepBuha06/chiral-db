@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from chiral.db.performance import calculate_rows_per_second
 from chiral.db.schema import init_metadata_table
-from chiral.db.sessions import session
 from chiral.utils.clock import MonotonicClock
 
 # Constants for stage thresholds
@@ -24,7 +23,6 @@ INITIAL_ANALYSIS_THRESHOLD = 100
 INCREMENTAL_MIGRATION_BATCH = 10
 
 
-@session
 async def ingest_data(
     data: dict[str, Any],
     session_id: str,
