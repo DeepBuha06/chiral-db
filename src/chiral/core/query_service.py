@@ -1012,11 +1012,29 @@ async def _execute_json_request_impl(
 
         # Phase 2: Logical Data Reconstruction (Merge duplicate parent rows into nested arrays)
         merged_results = {}
-        child_keys = (
+        inferred_child_keys = (
             [join.source_field for join in built.inferred_joins]
             if hasattr(built, "inferred_joins") and built.inferred_joins
             else []
         )
+
+        requested_select = hydrated_request.get("select", ["*"])
+        if requested_select == ["*"]:
+            child_keys = inferred_child_keys
+        elif isinstance(requested_select, list):
+            selected_roots = {field for field in requested_select if isinstance(field, str) and "." not in field}
+            # Only materialize nested arrays when parent source field is explicitly selected.
+            child_keys = [key for key in inferred_child_keys if key in selected_roots]
+        else:
+            child_keys = []
+
+        if not child_keys:
+            return {
+                "sql": built.sql,
+                "params": built.params,
+                "rows": raw_rows,
+                "row_count": len(raw_rows),
+            }
 
         for row in raw_rows:
             # Create a unique hash for the parent entity based on non-child fields
@@ -1045,9 +1063,23 @@ async def _execute_json_request_impl(
         }
 
     affected_rows = int(getattr(result, "rowcount", 0) or 0)
+
+    if operation == "delete":
+        table_name = str(request.get("table", "chiral_data"))
+        session_id = _extract_session_id(request)
+        if table_name == "chiral_data" and session_id:
+            count_result = await sql_session.execute(
+                text('SELECT COUNT(*) FROM "chiral_data" WHERE "session_id" = :sid'),
+                {"sid": session_id},
+            )
+            current_count = int(count_result.scalar() or 0)
+            await sql_session.execute(
+                text("UPDATE session_metadata SET record_count = :record_count WHERE session_id = :sid"),
+                {"sid": session_id, "record_count": current_count},
+            )
+
     return {
         "sql": built.sql,
         "params": built.params,
         "affected_rows": affected_rows,
     }
-

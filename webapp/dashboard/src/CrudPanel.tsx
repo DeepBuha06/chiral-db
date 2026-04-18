@@ -142,13 +142,34 @@ const CrudPanel: React.FC<{ onDataChanged?: () => void }> = ({ onDataChanged }) 
     const groupedSelect = buildGroupedSelectOptions(logicalFields);
     const inspectorTree = useMemo(() => buildInspectorTree(logicalFields), [logicalFields]);
 
+    const loadSessions = useCallback(async () => {
+        try {
+            const ids = await fetchSessions();
+            setSessionIds(ids);
+            setSessionId((current) => {
+                if (current && ids.includes(current)) {
+                    return current;
+                }
+                return ids[0] ?? '';
+            });
+        } catch (err) {
+            console.error('Session load error:', err);
+        }
+    }, []);
+
     // Initial Load
     useEffect(() => {
-        fetchSessions().then(ids => {
-            setSessionIds(ids);
-            if (ids.length > 0) setSessionId(ids[0]);
-        }).catch(err => console.error("Session load error:", err));
-    },[]);
+        void loadSessions();
+    }, [loadSessions]);
+
+    useEffect(() => {
+        const intervalId = window.setInterval(() => {
+            void loadSessions();
+        }, 4000);
+        return () => {
+            window.clearInterval(intervalId);
+        };
+    }, [loadSessions]);
 
     // Load Metadata when Session changes
     useEffect(() => {
@@ -203,7 +224,21 @@ const CrudPanel: React.FC<{ onDataChanged?: () => void }> = ({ onDataChanged }) 
         }
 
         if (operation === 'create') {
-            try { req.payload = JSON.parse(payloadJson) as Record<string, unknown>; }
+            try {
+                const parsedPayload = JSON.parse(payloadJson) as Record<string, unknown>;
+                const payloadSessionId = parsedPayload.session_id;
+                const missingPayloadSessionId =
+                    payloadSessionId === undefined ||
+                    payloadSessionId === null ||
+                    (typeof payloadSessionId === 'string' && payloadSessionId.trim() === '');
+
+                // Keep create behavior aligned with selected session context.
+                if (missingPayloadSessionId && sessionId.trim() !== '') {
+                    parsedPayload.session_id = sessionId;
+                }
+
+                req.payload = parsedPayload;
+            }
             catch { setError('Invalid JSON payload for CREATE'); setLoading(false); return; }
         }
 
@@ -231,6 +266,7 @@ const CrudPanel: React.FC<{ onDataChanged?: () => void }> = ({ onDataChanged }) 
             const newTab: ResultTab = { id: ++tabCounter, label: tabLabel, response, request: req, timestamp: new Date() };
             setResultTabs(prev => [...prev, newTab]);
             setActiveTabId(newTab.id);
+            void loadSessions();
 
             // Refresh metadata to reflect new rows
             fetchSessionInfo(sessionId).then(setSessionInfo);
@@ -244,7 +280,7 @@ const CrudPanel: React.FC<{ onDataChanged?: () => void }> = ({ onDataChanged }) 
         } finally {
             setLoading(false);
         }
-    },[operation, sessionId, selectFields, filters, payloadJson, updateKVs, limit, onDataChanged]);
+    },[operation, sessionId, selectFields, filters, payloadJson, updateKVs, limit, onDataChanged, loadSessions]);
 
     const activeTab = resultTabs.find(t => t.id === activeTabId);
 
